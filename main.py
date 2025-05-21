@@ -1,5 +1,9 @@
+from CLI.formulaInput import askFormula
+
 def main():
-    print("Hello!")
+    formula = askFormula()
+    print(formula)
+    
     return
 
 if __name__ == "__main__":
