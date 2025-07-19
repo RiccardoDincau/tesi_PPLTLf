@@ -1,11 +1,19 @@
-from CLI.formulaInput import askFormula
+from ltlf2dfa.parser.ltlf import LTLfParser
+from FiniteAutomaton import FiniteAutomaton
 
-def main():
-    formula = askFormula()
-    print(formula)
-    
-    return
+parser = LTLfParser()
+formula_str = "(a U b) || (X b && !a)"
+formula = parser(formula_str)
 
-if __name__ == "__main__":
-    main()
-    
+dfaStr = formula.to_dfa(False)
+
+d = FiniteAutomaton(dotsFormat=dfaStr)
+d.setName("1_DFA")
+rev = d.reverseTransitions(reduce=True)
+rev.setName("2_Rev")
+det = rev.determinize(reduce=True)
+det.setName("3_Det")
+
+d.visualize()
+rev.visualize()
+det.visualize()
