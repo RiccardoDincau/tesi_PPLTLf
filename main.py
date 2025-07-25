@@ -1,8 +1,12 @@
 from ltlf2dfa.parser.ltlf import LTLfParser
 from FiniteAutomaton import FiniteAutomaton
+from CLI.formulaInput import askFormula
+
+# s = askFormula()
+# print(s)
 
 parser = LTLfParser()
-formula_str = "(a U b) || (X b && !a)"
+formula_str = "(a U b) || (X true)"
 formula = parser(formula_str)
 
 dfaStr = formula.to_dfa(False)

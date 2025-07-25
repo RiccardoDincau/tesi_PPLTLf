@@ -31,7 +31,6 @@ def formulaInput():
         formula = input("Insert formula: ")
         
     return formula
-    
 
 if __name__ == "__main__":
     print(askFormula())

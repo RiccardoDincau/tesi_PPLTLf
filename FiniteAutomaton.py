@@ -153,7 +153,9 @@ present in the dots format string at initialization"""
                         break
                     
             for t in newStateTransitions:
-                newTransitions[i].append(Transition(i, powerStateIndex[str(tuple(t[1]))], t[0]))
+                L = list(t[1])
+                L.sort()
+                newTransitions[i].append(Transition(i, powerStateIndex[str(tuple(L))], t[0]))
                 
         dfa = FiniteAutomaton(newStatesNumber, newInitState, newAcceptingStates)
         dfa.transitions = newTransitions
@@ -239,8 +241,8 @@ Stati accettanti: """
         return S
     
     def visualize(self) -> None:
-        """Save a png image of the graph using graphiz"""
+        """Save a SVG image of the graph using graphiz"""
         from graphviz import Source
         
         src = Source(self.toDot())
-        src.render("imgs/" + self.name, format = "png", view = False)
+        src.render("imgs/" + self.name, format = "svg", view = False)

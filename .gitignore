@@ -2,3 +2,4 @@ MONA-master/
 imgs
 .venv
 __pycache__
+CLI/__pycache__/
