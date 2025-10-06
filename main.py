@@ -6,7 +6,9 @@ from CLI.formulaInput import askFormula
 # print(s)
 
 parser = LTLfParser()
-formula_str = "(a U b) || (X true)"
+# formula_str = "a U c && (X b)"
+formula_str = "b || X(b)"
+# formula_str = "a U c"
 formula = parser(formula_str)
 
 dfaStr = formula.to_dfa(False)
