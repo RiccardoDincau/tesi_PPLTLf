@@ -1,10 +1,16 @@
 from itertools import combinations, chain
+from pylogics.parsers import parse_pl
+from pylogics.semantics.pl import evaluate_pl
 
 class Transition:
     def __init__(self, startState: int, endState: int, label: str):
         self.s: int = startState
         self.e: int = endState
         self.label: str = label
+        self.formula = parse_pl(self.label)
+        
+    def evaluate(self, at_props: set[str]) -> bool:
+        return evaluate_pl(at_props)
         
     def __str__(self) -> str:
         return str(self.s) + " -> " + str(self.e) + " ( " + self.label + " )"   
