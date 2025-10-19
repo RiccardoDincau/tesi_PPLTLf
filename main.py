@@ -1,13 +1,14 @@
 from ltlf2dfa.parser.ltlf import LTLfParser
-from FiniteAutomaton import FiniteAutomaton
+from FiniteAutomaton import FiniteAutomaton, Transition
 from CLI.formulaInput import askFormula
-
+from TSA import TSA
 # s = askFormula()
 # print(s)
 
 parser = LTLfParser()
 # formula_str = "a U c && (X b)"
-formula_str = "b || X(b)"
+# formula_str = "b || X(b)"
+formula_str = "X(b)"
 # formula_str = "a U c"
 formula = parser(formula_str)
 
@@ -20,6 +21,12 @@ rev.setName("2_Rev")
 det = rev.determinize(reduce=True)
 det.setName("3_Det")
 
+
 d.visualize()
 rev.visualize()
 det.visualize()
+
+T = TSA(det)
+# print(T.toDot())
+# print(T)
+T.visualize(False)

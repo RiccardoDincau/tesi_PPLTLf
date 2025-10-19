@@ -10,7 +10,7 @@ class Transition:
         self.formula = parse_pl(self.label)
         
     def evaluate(self, at_props: set[str]) -> bool:
-        return evaluate_pl(at_props)
+        return evaluate_pl(self.formula, at_props)
         
     def __str__(self) -> str:
         return str(self.s) + " -> " + str(self.e) + " ( " + self.label + " )"   
@@ -169,6 +169,8 @@ present in the dots format string at initialization"""
         dfa = FiniteAutomaton(newStatesNumber, newInitState, newAcceptingStates)
         dfa.transitions = newTransitions
         
+        dfa.completeTransitions()
+        
         if reduce:
             return dfa.reduce()
 
@@ -215,6 +217,22 @@ present in the dots format string at initialization"""
             newTransitions[start].append(Transition(start, end, t.label))
         
         return nVisited
+    
+    def computeSetTransition(self, statesSet: set[int], prop_int: list[str]) -> set[int]:
+        S: set[int] = set()
+        
+        for q in statesSet:
+            for t in self.transitions[q]:
+                if t.evaluate(set(prop_int)):
+                    S.add(t.e)
+        
+        return S
+    
+    def completeTransitions(self) -> None:
+        for i in range(self.statesNumber):
+            T = self.transitions[i]
+            if len(T) == 0:
+                self.addTransition(Transition(i, i, "true"))
         
     def __str__(self) -> str:
         S: str = f"""Numero di stati: {self.statesNumber}
