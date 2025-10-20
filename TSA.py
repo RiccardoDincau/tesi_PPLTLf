@@ -47,9 +47,9 @@ class TSA:
         
         self.computeHeight()
         
-        # self.balance()
+        self.balance()
         
-        # self.liftTransitions()
+        self.liftTransitions()
         
     def fromDfa(self, DFA: FiniteAutomaton) -> None:
         """Build the corrseponding TSA of the given DFA."""
@@ -249,7 +249,7 @@ class TSA:
                 p = r.parent
                 assert p != None
             
-                if p.equivClass != r.equivClass + 1:
+                if p.height != r.height + 1:
                     m = ExtendedNode(len(self.nodes), r.states)
                     m.addParent(p)
                     m.trans = r.trans.copy()
@@ -337,7 +337,7 @@ class TSA:
 
         for n in self.nodes:
             # S += f"\n\t{n.index} [label=\"{n.states}\"]"
-            S += f"\n\t{n.index} [label=\"{n.states}, {n.height}\"]"
+            S += f"\n\t{n.index} [label=\"{n.states}\"]"
             
             for t in n.trans.keys():
                 S += f"\n\t{n.index} -> {n.trans[t]} [label=\"{t}\"];"
