@@ -15,8 +15,9 @@ class ExtendedNode:
         self.trans: dict[str, int] = {} 
         self.states: set[int] = states #Subset of states of the FA
         
-        self.height = -1
+        self.equivClass = -1
         self.tarjanIdx = -1
+        self.height = -1
         
     def addParent(self, newParent: "ExtendedNode"):
         if self.parent != None:
@@ -150,51 +151,95 @@ class TSA:
                     
             L.remove(r)
 
-    # Should be modified accoring to the olda paper (1994)       
     def computeHeight(self) -> None:
-        self.S = []
+        self.S: list[ExtendedNode] = []
         self.tarjanIdx = 0
         self.inStack: list[bool] = [False] * len(self.nodes)
         
-        self.tarjanEquiv(self.nodes[0]) 
-
         for v in self.nodes:
-            self.height = max(self.height, v.height)
+            if (v.tarjanIdx < 0):
+                self.tarjanEquiv(v) 
 
+        layers: list[set[ExtendedNode]] = [set()]
+        nodeArranged: list[bool] = []
+        
         for v in self.nodes:
-            if v.height >= 0:
-                v.height = self.height - v.height
-            else:
+            nodeArranged.append(False)
+            if len(v.states) == 1:
+                layers[0].add(v)
                 v.height = 0
-        for _ in range(self.height + 1):
-            self.heightClasses.append([])
+                nodeArranged[v.index] = True
+        
+        finished = False    
+        while not finished:
+            i = len(layers) - 1
+            
+            layers.append(set())
+            
+            for m in layers[i]:
+                assert m.parent != None, print("!!!", m.states)
+                
+                layers[i + 1].add(m.parent)
+                
+            updatedLayer = True
+            while updatedLayer:
+                updatedLayer = False
+                removedNode: ExtendedNode | None = None
+                for m in layers[i + 1]:
+                    for m_1 in self.nodes:
+                        if (not nodeArranged[m_1.index] 
+                            and m_1.equivClass != m.equivClass 
+                            and (m_1.parent == m or (m_1.index in m.trans.values()))):
+                            updatedLayer = True
+                            removedNode = m
+                            break
+                    if removedNode != None:
+                        break
+                    
+                if removedNode != None:
+                    layers[i + 1].remove(removedNode)
+                        
+            for m in layers[i + 1]:
+                m.height = i + 1
+                nodeArranged[m.index] = True
 
-        for v in self.nodes:
-            self.heightClasses[v.height].append(v.index)
+                if m.parent == None:
+                    self.height = m.height
+                    finished = True
+                    break
     
+        for i in range(self.height + 1):
+            self.heightClasses.append([])
+            
+        for m in self.nodes:
+            self.heightClasses[m.height].append(m.index)
+            
+                
     def tarjanEquiv(self, v: ExtendedNode) -> None:
         v.tarjanIdx = self.tarjanIdx
-        v.height = self.tarjanIdx
+        v.equivClass = self.tarjanIdx
         self.tarjanIdx += 1
         self.S.append(v)
         self.inStack[v.index] = True
         
         for k in v.trans.keys():
             m = self.nodes[v.trans[k]]
+            if m == v:
+                continue
             
             if (m.tarjanIdx < 0):
                 self.tarjanEquiv(m)
-                v.height = min(v.height, m.height)
+                v.equivClass = min(v.equivClass, m.equivClass)
             elif (self.inStack[m.index]):
-                v.height = min(v.height, m.height)
+                v.equivClass = min(v.equivClass, m.equivClass)
                 
-        if v.height == v.index:
+        if v.equivClass == v.tarjanIdx:
             w = self.S.pop()
-            self.inStack[w.index]
+            self.inStack[w.index] = False
             
-            while (w.index != v.index):
+            while (w.tarjanIdx != v.tarjanIdx):
                 w = self.S.pop()
-                self.inStack[w.index]
+                self.inStack[w.index] = False
          
     def balance(self) -> None:
         for i in range(self.height):
@@ -204,7 +249,7 @@ class TSA:
                 p = r.parent
                 assert p != None
             
-                if p.height != r.height + 1:
+                if p.equivClass != r.equivClass + 1:
                     m = ExtendedNode(len(self.nodes), r.states)
                     m.addParent(p)
                     m.trans = r.trans.copy()
