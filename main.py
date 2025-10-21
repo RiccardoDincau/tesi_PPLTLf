@@ -1,20 +1,15 @@
-from ltlf2dfa.parser.ltlf import LTLfParser
 from FiniteAutomaton import FiniteAutomaton, Transition
 from CLI.formulaInput import askFormula
 from TSA import TSA
 # s = askFormula()
 # print(s)
 
-parser = LTLfParser()
-# formula_str = "a U c && (X b)"
-# formula_str = "b || X(b)"
-formula_str = "X(b)"
+formula_str = "a U c && (X b)"
+formula_str = "b || X(b)"
+# formula_str = "X(b)"
 # formula_str = "a U c"
-formula = parser(formula_str)
 
-dfaStr = formula.to_dfa(False)
-
-d = FiniteAutomaton(dotsFormat=dfaStr)
+d = FiniteAutomaton(formulaStr=formula_str)
 d.setName("1_DFA")
 rev = d.reverseTransitions(reduce=True)
 rev.setName("2_Rev")

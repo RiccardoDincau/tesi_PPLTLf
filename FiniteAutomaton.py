@@ -16,13 +16,19 @@ class Transition:
         return str(self.s) + " -> " + str(self.e) + " ( " + self.label + " )"   
         
 class FiniteAutomaton:
-    def __init__(self, statesNumber: int = 0, initState: int = 0, acceptingStates: list[int] = [], dotsFormat: str = ""):
+    def __init__(self, statesNumber: int = 0, initState: int = 0, acceptingStates: list[int] = [], formulaStr: str = ""):
         """The automaton can either be created by passing the number of states, the 
         initial state and the accepting states or by passing a string in
         dots format of the automaton"""
         
-        if dotsFormat != "":
+        if formulaStr != "":
             from parse import parse, Result
+            from ltlf2dfa.parser.ltlf import LTLfParser
+            
+            parser = LTLfParser()
+            formula = parser(formulaStr)
+
+            dotsFormat = formula.to_dfa(False)
             
             strLines = dotsFormat.splitlines()
             
