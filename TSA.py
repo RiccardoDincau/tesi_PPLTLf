@@ -42,6 +42,7 @@ class TSA:
         self.nodes: list[ExtendedNode] = []
         self.height = -1
         self.heightClasses: list[list[int]] = []
+        self.atomicProps: set[str] = DFA.atomicProps
         
         self.fromDfa(DFA)
         
@@ -54,17 +55,13 @@ class TSA:
     def fromDfa(self, DFA: FiniteAutomaton) -> None:
         """Build the corrseponding TSA of the given DFA."""
         
-        at_prop: list[str] = ["a", "b"] # !!! GET THE ATOMIC PROPOSITION IN THE FORMULA OF THE DFA
-        at_prop: list[str] = ["b"] # !!! GET THE ATOMIC PROPOSITION IN THE FORMULA OF THE DFA
-        
         root = ExtendedNode(0, set(range(DFA.statesNumber)))
         
         L: list[ExtendedNode] = [root]
         self.nodes.append(root)
         
         while len(L) > 0:
-            alphabet_it = chain.from_iterable(combinations(at_prop, r) for r in range(len(at_prop)+1))
-            # alphabet_it = at_prop # !!!!!!!
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
             r = L[0]
             
             for s in alphabet_it: 
@@ -131,8 +128,7 @@ class TSA:
                 L.append(r)
                 
         while len(L) > 0:
-            alphabet_it = chain.from_iterable(combinations(at_prop, r) for r in range(len(at_prop)+1))
-            # alphabet_it = at_prop # !!!!!!!
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
             
             r = L[0]
             m = r.parent
@@ -143,7 +139,6 @@ class TSA:
                 m_1 = self.nodes[m.trans[str(set(s))]]
                 
                 for r_1 in self.nodes:
-                    # print(r_1.states == F, (m_1 in self.getAncestors(r_1)), ", r_1:", r_1.states, )
                     # Condition???
                     if r_1.states == F and (m_1.index in self.getAncestors(r_1)):
                         r.setTransition(r_1, str(set(s)))
@@ -177,7 +172,7 @@ class TSA:
             layers.append(set())
             
             for m in layers[i]:
-                assert m.parent != None, print("!!!", m.states)
+                assert m.parent != None
                 
                 layers[i + 1].add(m.parent)
                 
@@ -214,7 +209,6 @@ class TSA:
         for m in self.nodes:
             self.heightClasses[m.height].append(m.index)
             
-                
     def tarjanEquiv(self, v: ExtendedNode) -> None:
         v.tarjanIdx = self.tarjanIdx
         v.equivClass = self.tarjanIdx
@@ -359,10 +353,10 @@ class TSA:
         S += "\n}"
         return S
     
-    def visualize(self, forceHeight = True) -> None:
+    def visualize(self, forceHeight = True, imageName = "Unnamed", imagePath = "img/") -> None:
         """Save a SVG image of the graph using graphiz"""
         
         from graphviz import Source
         
         src = Source(self.toDot(forceHeight))
-        src.render("imgs/" + "TSA", format = "svg", view = False)
+        src.render(imagePath + imageName, format = "svg", view = False)

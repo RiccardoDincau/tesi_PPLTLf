@@ -110,12 +110,7 @@ if __name__ == "__main__":
     newFStr = convertToString(newF)
     # print("str:",newFStr)
     
-    parser = LTLfParser()
-    formula = parser(newFStr)
-
-    dfaStr = formula.to_dfa(False)
-
-    d = FiniteAutomaton(dotsFormat=dfaStr)
+    d = FiniteAutomaton(formulaStr=newFStr)
     d.setName("1_DFA")
     d.visualize()
     newD = d.reverseTransitions(reduce=True).determinize(reduce=True)
