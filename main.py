@@ -1,6 +1,7 @@
-from FiniteAutomaton import FiniteAutomaton, Transition
-from CLI.formulaInput import askFormula
+from FiniteAutomaton import FiniteAutomaton
 from TSA import TSA
+from CascadeDecomposition import CascadeDecomposition
+# from CLI.formulaInput import askFormula
 
 imagesFolder = "imgs/"
 
@@ -8,7 +9,7 @@ imagesFolder = "imgs/"
 # print(s)
 
 formula_str = "a U c && (X b)"
-formula_str = "b || X(b)"
+formula_str = "b && X(b)"
 # formula_str = "X(b)"
 # formula_str = "a U c"
 
@@ -24,3 +25,7 @@ T = TSA(det)
 # print(T.toDot())
 # print(T)
 T.visualize(True, "tsa", imagesFolder)
+
+CD = CascadeDecomposition(det)
+# print(CD.toDot())
+CD.visualize("CD", imagesFolder)

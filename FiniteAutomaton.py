@@ -170,7 +170,7 @@ class FiniteAutomaton:
         dfa = FiniteAutomaton(newStatesNumber, newInitState, newAcceptingStates, self.atomicProps)
         dfa.transitions = newTransitions
         
-        dfa.completeTransitions()
+        # dfa.completeTransitions()
         
         if reduce:
             return dfa.reduce()
