@@ -324,7 +324,6 @@ class TSA:
         S += """{
     rankdir = TD;
     center = true;
-    size = "7.5,10.5";
     edge [fontname = Courier];
     node [height = .5, width = .5];
     node [shape = square];"""

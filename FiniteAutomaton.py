@@ -142,25 +142,43 @@ class FiniteAutomaton:
                 
             newStateTransitions: list[tuple[str, set[int]]] = []
             
-            for state in currNewState:
-                for t in self.transitions[state]:
+            # for state in currNewState:
+                # for t in self.transitions[state]:
                     # For each state in the current new state compute the union of
                     # the arriving states of all the transitions with the same label 
-                    foundLabel = False
-                    for newT in newStateTransitions:
-                        if newT[0] == t.label:
-                            newT[1].add(t.e)
-                            foundLabel = True
+                    
+                    # TODO: check how the transitions should be computed (Evaulation of the label??)
+                    # foundLabel = False
+                    # for newT in newStateTransitions:
+                    #     if newT[0] == t.label:
+                    #         newT[1].add(t.e)
+                    #         foundLabel = True
 
-                    if not foundLabel:
-                        newStateTransitions.append((t.label, {t.e})) 
+                    # if not foundLabel:
+                    #     newStateTransitions.append((t.label, {t.e})) 
+                    
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
+            
+            for s in alphabet_it:
+                if len(s) == 0: continue
+                label = ""
+                for ap in s:
+                    label += f"{ap} && "
+                label += "true"
+                targetState: set[int] = set()
                 
-                # If there is an intersection beetween the old accepting state
-                # and the new current state i add i to the new accepting states
-                for oldAcceptingState in self.acceptingStates:
-                    if oldAcceptingState == state:
-                        newAcceptingStates.append(i)
-                        break
+                for state in currNewState:
+                    targetState = targetState.union(self.computeSetTransition({state}, list(s)))
+            
+                    # If there is an intersection beetween the old accepting state
+                    # and the new current state i add i to the new accepting states
+                    for oldAcceptingState in self.acceptingStates:
+                        if oldAcceptingState == state:
+                            newAcceptingStates.append(i)
+                            break
+                
+                if len(targetState) > 0:
+                    newStateTransitions.append((label, targetState))
                     
             for t in newStateTransitions:
                 L = list(t[1])
@@ -170,7 +188,7 @@ class FiniteAutomaton:
         dfa = FiniteAutomaton(newStatesNumber, newInitState, newAcceptingStates, self.atomicProps)
         dfa.transitions = newTransitions
         
-        # dfa.completeTransitions()
+        dfa.completeTransitions()
         
         if reduce:
             return dfa.reduce()
@@ -275,7 +293,6 @@ Stati accettanti: """
         S += """{
     rankdir = LR;
     center = true;
-    size = "7.5,10.5";
     edge [fontname = Courier];
     node [height = .5, width = .5];
     node [shape = doublecircle];"""

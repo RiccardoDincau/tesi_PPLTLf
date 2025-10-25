@@ -9,7 +9,8 @@ imagesFolder = "imgs/"
 # print(s)
 
 formula_str = "a U c && (X b)"
-formula_str = "b && X(b)"
+# formula_str = "(a || c) && X(b)"
+formula_str = "a && X(a && !X(a))"
 # formula_str = "X(b)"
 # formula_str = "a U c"
 
