@@ -96,7 +96,19 @@ class FiniteAutomaton:
         # Add a transition from this new state to each old accepting state
         for state in self.acceptingStates:
             nfa.addTransition(Transition(nfa.statesNumber - 1, state, "true"))
+
+        sinkStateAdded = False
+        for i in range(nfa.statesNumber):
+            if len(nfa.transitions[i]) == 0:
+                if not sinkStateAdded:
+                    nfa.statesNumber += 1
+                    nfa.transitions.append([Transition(nfa.statesNumber - 1, nfa.statesNumber - 1, "true")])
+                    sinkStateAdded = True
+                    
+                nfa.addTransition(Transition(i, nfa.statesNumber - 1, "true"))
             
+        # nfa.completeTransitions()    
+        
         if reduce:
             return nfa.reduce()
             
@@ -116,7 +128,7 @@ class FiniteAutomaton:
         
         newInitState = 0
         
-        newAcceptingStates: list[int] = []
+        newAcceptingStates: set[int] = set()
         
         # For each subset of the states save its index in the ordered powerset
         # The index is used as the id of the subset in the new automaton
@@ -127,7 +139,8 @@ class FiniteAutomaton:
             powerStateIndex[str(currNewState)] = i
 
         newTransitions: list[list[Transition]] = [[] for _ in range(newStatesNumber)]
-
+        sinkTransition = False
+        
         # Compute the new transitions, every new state (a subset 
         # of the old states) is associated with its index i.
         # i is the index of the subset in the sorted powerset
@@ -160,35 +173,56 @@ class FiniteAutomaton:
             alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
             
             for s in alphabet_it:
-                if len(s) == 0: continue
                 label = ""
-                for ap in s:
-                    label += f"{ap} && "
-                label += "true"
+                for p in self.atomicProps:
+                    if len(label) != 0: label += "&& "
+                    if p in s:
+                        label += f"{p} "
+                    else:
+                        label += f"~({p}) "
                 targetState: set[int] = set()
                 
                 for state in currNewState:
                     targetState = targetState.union(self.computeSetTransition({state}, list(s)))
-            
+
                     # If there is an intersection beetween the old accepting state
                     # and the new current state i add i to the new accepting states
                     for oldAcceptingState in self.acceptingStates:
                         if oldAcceptingState == state:
-                            newAcceptingStates.append(i)
+                            newAcceptingStates.add(i)
                             break
                 
                 if len(targetState) > 0:
-                    newStateTransitions.append((label, targetState))
+                    targetStateFound = False
+                    for t in newStateTransitions:
+                        if t[1] == targetState:
+                            newLabel = t[0] + "|| " + label
+                            newStateTransitions.remove(t)
+                            newStateTransitions.append((newLabel, targetState))
+                            targetStateFound = True
+                            break                    
+                    if not targetStateFound:
+                        newStateTransitions.append((label, targetState))
+                # else:
+                    # if not sinkTransition:
+                    #     sinkTransition = True
+                    #     newStatesNumber += 1
+                    #     newTransitions.append([Transition(newStatesNumber - 1, newStatesNumber - 1, "true")])
+
+                    # newTransitions[i].append(Transition(i, newStatesNumber - 1, label))
                     
             for t in newStateTransitions:
                 L = list(t[1])
                 L.sort()
                 newTransitions[i].append(Transition(i, powerStateIndex[str(tuple(L))], t[0]))
                 
-        dfa = FiniteAutomaton(newStatesNumber, newInitState, newAcceptingStates, self.atomicProps)
+            if len(newStateTransitions) == 0:
+                newTransitions[i].append(Transition(i, i, "true"))
+                
+        dfa = FiniteAutomaton(newStatesNumber, newInitState, list(newAcceptingStates), self.atomicProps)
         dfa.transitions = newTransitions
         
-        dfa.completeTransitions()
+        # dfa.completeTransitions()
         
         if reduce:
             return dfa.reduce()
@@ -249,8 +283,6 @@ class FiniteAutomaton:
 
     def completeTransitions(self) -> None:
         sinkStateIdx = self.statesNumber
-        self.statesNumber += 1
-        self.transitions.append([Transition(sinkStateIdx, sinkStateIdx, "true")])
         
         for i in range(self.statesNumber):
             T: list[Transition] = self.transitions[i]
@@ -274,6 +306,10 @@ class FiniteAutomaton:
 
                 self.addTransition(Transition(i, sinkStateIdx, formula))
 
+        # self.addTransition(Transition(self.initState, self.initState, "true"))
+        self.statesNumber += 1
+        self.transitions.append([Transition(sinkStateIdx, sinkStateIdx, "true")])
+        
     def __str__(self) -> str:
         S: str = f"""Numero di stati: {self.statesNumber}
 Stato iniziale: {self.initState}

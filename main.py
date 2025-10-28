@@ -11,6 +11,7 @@ imagesFolder = "imgs/"
 formula_str = "a U c && (X b)"
 # formula_str = "(a || c) && X(b)"
 formula_str = "a && X(a && !X(a))"
+formula_str = "a && X(a)"
 # formula_str = "X(b)"
 # formula_str = "a U c"
 
