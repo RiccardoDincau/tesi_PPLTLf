@@ -47,6 +47,8 @@ class TSA:
         self.fromDfa(DFA)
         
         self.computeHeight()
+
+        self.visualize(True, "TSA_height", "imgs/")
         
         self.balance()
         
@@ -155,60 +157,48 @@ class TSA:
             if (v.tarjanIdx < 0):
                 self.tarjanEquiv(v) 
 
-        layers: list[set[ExtendedNode]] = [set()]
-        nodeArranged: list[bool] = []
+        self.computeHeightRec(self.nodes[0])
+        self.height = self.nodes[0].height
         
-        for v in self.nodes:
-            nodeArranged.append(False)
-            if len(v.states) == 1:
-                layers[0].add(v)
-                v.height = 0
-                nodeArranged[v.index] = True
-        
-        finished = False    
-        while not finished:
-            i = len(layers) - 1
-            
-            layers.append(set())
-            
-            for m in layers[i]:
-                assert m.parent != None
-                
-                layers[i + 1].add(m.parent)
-                
-            updatedLayer = True
-            while updatedLayer:
-                updatedLayer = False
-                removedNode: ExtendedNode | None = None
-                for m in layers[i + 1]:
-                    for m_1 in self.nodes:
-                        if (not nodeArranged[m_1.index] 
-                            and m_1.equivClass != m.equivClass 
-                            and (m_1.parent == m or (m_1.index in m.trans.values()))):
-                            updatedLayer = True
-                            removedNode = m
-                            break
-                    if removedNode != None:
-                        break
-                    
-                if removedNode != None:
-                    layers[i + 1].remove(removedNode)
-                        
-            for m in layers[i + 1]:
-                m.height = i + 1
-                nodeArranged[m.index] = True
-
-                if m.parent == None:
-                    self.height = m.height
-                    finished = True
-                    break
-    
         for i in range(self.height + 1):
             self.heightClasses.append([])
             
         for m in self.nodes:
             self.heightClasses[m.height].append(m.index)
             
+    def computeHeightRec(self, v: ExtendedNode) -> None:
+        v.height = 0
+
+        if len(v.states) == 1:
+            return
+        
+        maxHeight = 0
+        
+        for idx in v.trans.values():
+            currHeight = 0 
+            m = self.nodes[idx]
+            if m.height < 0:
+                self.computeHeightRec(m)
+            
+            currHeight = m.height
+            
+            if m.equivClass != v.equivClass:
+                currHeight += 1
+                
+            maxHeight = max(currHeight, maxHeight)
+           
+        for idx in v.children:
+            currHeight = 0 
+            m = self.nodes[idx]
+            if m.height < 0:
+                self.computeHeightRec(m)
+            
+            currHeight = m.height + 1
+            
+            maxHeight = max(currHeight, maxHeight)
+            
+        v.height = maxHeight
+          
     def tarjanEquiv(self, v: ExtendedNode) -> None:
         v.tarjanIdx = self.tarjanIdx
         v.equivClass = self.tarjanIdx
@@ -262,7 +252,7 @@ class TSA:
                     anc = m_1.parent
                     
                     while anc.height < m.height:
-                        assert anc.parent != None
+                        assert anc.parent != None, print(anc.states)
                         anc = anc.parent
 
                     m.setTransition(anc, k)
@@ -329,8 +319,8 @@ class TSA:
     node [shape = square];"""
 
         for n in self.nodes:
-            # S += f"\n\t{n.index} [label=\"{n.states}\"]"
             S += f"\n\t{n.index} [label=\"{n.states}\"]"
+            # S += f"\n\t{n.index} [label=\"{n.states}\"]"
             
             for t in n.trans.keys():
                 S += f"\n\t{n.index} -> {n.trans[t]} [label=\"{t}\"];"
