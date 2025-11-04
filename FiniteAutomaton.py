@@ -222,13 +222,65 @@ class FiniteAutomaton:
         dfa = FiniteAutomaton(newStatesNumber, newInitState, list(newAcceptingStates), self.atomicProps)
         dfa.transitions = newTransitions
         
-        # dfa.completeTransitions()
-        
         if reduce:
-            return dfa.reduce()
+            return dfa.minimize()
 
         return dfa
     
+    def minimize(self) -> "FiniteAutomaton":
+        # Removing unreachable states
+        FA = self.removeUnreachableStates()
+        nfa = FA.reverseTransitions().removeUnreachableStates()
+        dfa = FA.determinize().removeUnreachableStates()
+        
+        return dfa
+    
+    def removeUnreachableStates(self) -> "FiniteAutomaton":
+        reachable: set[int] = {1}
+        newStates: set[int] = {1}
+        
+        while len(newStates) > 0:
+            temp: set[int] = set()
+            
+            for q in newStates:
+                alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
+            
+                for s in alphabet_it:
+                    temp = temp.union(self.computeSetTransition({q}, list(s)))
+                    
+            newStates = temp.difference(reachable)
+            reachable = reachable.union(newStates)
+            
+        newStateId: list[int] = [-1 for _ in range(self.statesNumber)]
+        newAcceptingStates: list[int] = []
+        reachableL = list(reachable)
+        
+        for i in range(len(reachableL)):
+            q = reachableL[i]
+            newStateId[q] = i + 1
+            if q in self.acceptingStates:
+                newAcceptingStates.append(i + 1)
+            
+        newTransitions: list[list[Transition]] = [[]]
+        
+        currStateId = 1
+        for i in range(1, len(self.transitions)):
+            if not (i in reachable): continue
+            newTransitions.append([])
+            
+            T = self.transitions[i]
+            
+            for t in T:
+                if not (t.e in reachable): continue
+                newTransitions[currStateId].append(Transition(newStateId[t.s], newStateId[t.e], t.label))
+                
+            currStateId += 1
+            
+        minDfa = FiniteAutomaton(len(reachable) + 1, 1, newAcceptingStates, self.atomicProps)
+        minDfa.transitions = newTransitions
+        
+        return minDfa    
+
     def reduce(self) -> "FiniteAutomaton":
         """Remove all the states that cannot be visited"""
         
@@ -272,6 +324,7 @@ class FiniteAutomaton:
         return nVisited
     
     def computeSetTransition(self, statesSet: set[int], prop_int: list[str]) -> set[int]:
+        # TODO: prop_int list[str] -> set[str]
         S: set[int] = set()
         
         for q in statesSet:
