@@ -3,7 +3,7 @@ from TSA import TSA
 from CascadeDecomposition import CascadeDecomposition
 # from CLI.formulaInput import askFormula
 
-imagesFolder = "imgs/"
+imagesFolder = "imgs/svgs/"
 
 # s = askFormula()
 # print(s)
@@ -17,17 +17,17 @@ formula_str = "a && X(a)"
 
 d = FiniteAutomaton(formulaStr=formula_str)
 rev = d.reverseTransitions(reduce=True)
-det = rev.determinize(reduce=True)
+det = rev.determinize(reduce=False)
 
-d.visualize("_1_dfa", imagesFolder)
-rev.visualize("_2_rev", imagesFolder)
-det.visualize("_3_det", imagesFolder)
+d.visualize("_1_dfa", imagesFolder, "svg")
+rev.visualize("_2_rev", imagesFolder, "svg")
+det.visualize("_3_det", imagesFolder, "svg")
 
 T = TSA(det)
 # print(T.toDot())
 # print(T)
-T.visualize(True, "tsa", imagesFolder)
+T.visualize(True, "tsa", imagesFolder, "svg")
 
 CD = CascadeDecomposition(det)
 # print(CD.toDot())
-CD.visualize("CD", imagesFolder)
+CD.visualize("CD", imagesFolder, "svg")

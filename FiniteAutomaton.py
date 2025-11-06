@@ -57,10 +57,10 @@ class FiniteAutomaton:
             for line in strLines:
                 T = parse(" {start} -> {end} [label=\"{label}\"];", line)
                 
-                transitions.append(Transition(int(T["start"]), int(T["end"]), T["label"]))
+                transitions.append(Transition(int(T["start"]), int(T["end"]), T["label"])) # Remove one from MONA output (?)
                 statesNumber = max(statesNumber, int(T["start"]), int(T["end"]))
                 
-            statesNumber += 1
+            statesNumber += 1 #TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             
             self.statesNumber = statesNumber
             self.initState = initState
@@ -85,29 +85,14 @@ class FiniteAutomaton:
     def reverseTransitions(self, reduce: bool = False) -> "FiniteAutomaton":
         """Returns the NFA obtained from reversing all the transitions"""
         
-        nfa = FiniteAutomaton(self.statesNumber + 1, self.statesNumber, [self.initState], self.atomicProps) 
+        nfa = FiniteAutomaton(self.statesNumber, self.acceptingStates[0], [self.initState], self.atomicProps) 
         
         for state in range(self.statesNumber - 1):
             for t in self.transitions[state + 1]:
                 reversedTransition = Transition(t.e, t.s, t.label)
                 nfa.addTransition(reversedTransition)
         
-        # Add a new state that serves as the initial state
-        # Add a transition from this new state to each old accepting state
-        for state in self.acceptingStates:
-            nfa.addTransition(Transition(nfa.statesNumber - 1, state, "true"))
-
-        sinkStateAdded = False
-        for i in range(nfa.statesNumber):
-            if len(nfa.transitions[i]) == 0:
-                if not sinkStateAdded:
-                    nfa.statesNumber += 1
-                    nfa.transitions.append([Transition(nfa.statesNumber - 1, nfa.statesNumber - 1, "true")])
-                    sinkStateAdded = True
-                    
-                nfa.addTransition(Transition(i, nfa.statesNumber - 1, "true"))
-            
-        # nfa.completeTransitions()    
+        nfa.completeTransitions()    
         
         if reduce:
             return nfa.reduce()
@@ -124,9 +109,11 @@ class FiniteAutomaton:
         """Compute the determinized DFA of an NFA"""
         
         # The new DFA has 2^n states
-        newStatesNumber = pow(2, self.statesNumber - 1)
+        newStatesNumber = pow(2, self.statesNumber - 1) + 1
         
-        newInitState = 0
+        print("New states N:", newStatesNumber)
+        
+        newInitState = 1
         
         newAcceptingStates: set[int] = set()
         
@@ -134,7 +121,7 @@ class FiniteAutomaton:
         # The index is used as the id of the subset in the new automaton
         powerStateIndex = {}
         statesPowersetIter = self.statesPowersetIterator()
-        for i in range(newStatesNumber):
+        for i in range(1, newStatesNumber):
             currNewState = next(statesPowersetIter)
             powerStateIndex[str(currNewState)] = i
 
@@ -145,7 +132,7 @@ class FiniteAutomaton:
         # of the old states) is associated with its index i.
         # i is the index of the subset in the sorted powerset
         statesPowersetIter = self.statesPowersetIterator()
-        for i in range(newStatesNumber):
+        for i in range(1, newStatesNumber):
             currNewState = next(statesPowersetIter)
             
             # The subset of the old states containg only the initial old state 
@@ -335,33 +322,20 @@ class FiniteAutomaton:
         return S
 
     def completeTransitions(self) -> None:
-        sinkStateIdx = self.statesNumber
-        
         for i in range(self.statesNumber):
-            T: list[Transition] = self.transitions[i]
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
             
-            if len(T) == 0:
-                self.addTransition(Transition(i, i, "true"))
-                continue
-            else:
-                formula = ""
-                trueFound = False
-                for t in T:
-                    if t.label == "true":
-                        trueFound = True
-                        break
-                    
-                    formula += f"(~({t.label})) && "
-                formula += "true"
-                
-                if trueFound:
-                    continue
-
-                self.addTransition(Transition(i, sinkStateIdx, formula))
-
-        # self.addTransition(Transition(self.initState, self.initState, "true"))
-        self.statesNumber += 1
-        self.transitions.append([Transition(sinkStateIdx, sinkStateIdx, "true")])
+            for s in alphabet_it:
+                label = ""
+                for p in self.atomicProps:
+                    if len(label) != 0: label += "&& "
+                    if p in s:
+                        label += f"{p} "
+                    else:
+                        label += f"~({p}) "
+                        
+                    if len(self.computeSetTransition({i}, list(s))) == 0:
+                        self.addTransition(Transition(i, self.initState, label))
         
     def __str__(self) -> str:
         S: str = f"""Numero di stati: {self.statesNumber}
@@ -397,10 +371,10 @@ Stati accettanti: """
         S += "}"
         return S
     
-    def visualize(self, imageName = "Unnamed", imagePath = "img/") -> None:
+    def visualize(self, imageName = "Unnamed", imagePath = "img/", format = "svg") -> None:
         """Save a SVG image of the graph using graphiz"""
         
         from graphviz import Source
         
         src = Source(self.toDot())
-        src.render(imagePath + imageName, format = "svg", view = False)
+        src.render(imagePath + imageName, format = format, view = False)

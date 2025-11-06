@@ -98,7 +98,6 @@ class CascadeDecomposition:
         self.tsa = TSA(dfa)
 
         self.CAs: list[CascadeAutomaton] = [CascadeAutomaton(0, None, self.tsa)]
-        self.CAs[0].visualize("ca_0", "imgs/CA/")
         for layer in range(1, self.tsa.height + 1):
             newCA = CascadeAutomaton(layer,self.CAs[layer - 1], self.tsa)
             self.CAs.append(newCA)
@@ -125,11 +124,11 @@ class CascadeDecomposition:
         
         return S
     
-    def visualize(self, imageName = "Unnamed", imagePath = "img/") -> None:
+    def visualize(self, imageName = "Unnamed", imagePath = "img/", format = "svg") -> None:
         """Save a SVG image of the graph using graphiz"""
         
         from graphviz import Source
         
         src = Source(self.toDot())
-        src.render(imagePath + imageName, format = "svg", view = False)
+        src.render(imagePath + imageName, format = format, view = False)
   

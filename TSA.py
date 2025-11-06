@@ -48,8 +48,6 @@ class TSA:
         
         self.computeHeight()
 
-        self.visualize(True, "TSA_height", "imgs/")
-        
         self.balance()
         
         self.liftTransitions()
@@ -342,10 +340,10 @@ class TSA:
         S += "\n}"
         return S
     
-    def visualize(self, forceHeight = True, imageName = "Unnamed", imagePath = "img/") -> None:
+    def visualize(self, forceHeight = True, imageName = "Unnamed", imagePath = "img/", format = "svg") -> None:
         """Save a SVG image of the graph using graphiz"""
         
         from graphviz import Source
         
         src = Source(self.toDot(forceHeight))
-        src.render(imagePath + imageName, format = "svg", view = False)
+        src.render(imagePath + imageName, format = format, view = False)
