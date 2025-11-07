@@ -1,4 +1,4 @@
-from TSA import TSA, ExtendedNode
+from TSA import TSA, TSANode
 from FiniteAutomaton import FiniteAutomaton
 from itertools import combinations, chain
 

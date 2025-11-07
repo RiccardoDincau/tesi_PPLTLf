@@ -3,33 +3,77 @@ from pylogics.parsers import parse_pl
 from pylogics.semantics.pl import evaluate_pl
 
 class Transition:
-    def __init__(self, startState: int, endState: int, label: str):
-        self.s: int = startState
-        self.e: int = endState
-        self.label: str = label
-        self.formula = parse_pl(self.label)
+    def __init__(self, target: "State", atomicPropositions: set[str]):
+        self.target: State = target
+        self.ap: set[str] = atomicPropositions
         
-    def evaluate(self, at_props: set[str]) -> bool:
-        return evaluate_pl(self.formula, at_props)
+    def evaluate(self, atProps: set[str]) -> bool:
+        """Return True if atProps satisfies the transition formula, False otherwise."""
         
+        return self.ap == atProps
+    
+    def formulaToStr(self, allProps: set[str]) -> str:
+        S = ""
+        for p in allProps:
+            if len(S) > 0:
+                S += " && "
+            if p in self.ap:
+                S += f"{p}"
+            else:
+                S += f"~({p})"
+        return S
+    
     def __str__(self) -> str:
-        return str(self.s) + " -> " + str(self.e) + " ( " + self.label + " )"   
+        return f"-> {self.target.index} ({self.ap})"
         
+class State:
+    def __init__(self, index: int) -> None:
+        self.index: int = index
+        self.transitions: list[Transition] = []
+        
+    def addTransition(self, target: "State", atomicPropositions: set[str]) -> None:
+        self.transitions.append(Transition(target, atomicPropositions))
+        
+    def computeTransition(self, atomicPropositions: set[str]) -> set["State"]:
+        """Computes the set of states reachable from this one with the given
+        atomic propositions. The result set can contain more than one transition only
+        if this is a non deterministic automaton"""
+        
+        res: set["State"] = set()
+        
+        for t in self.transitions:
+            if t.evaluate(atomicPropositions):
+                res.add(t.target)
+            
+        return res
+    
+    def transitionsToDot(self, allProps: set[str]) -> str:
+        S = ""
+        for t in self.transitions:
+            S += f"\t{self.index} -> {t.target.index} [label=\"{t.formulaToStr(allProps)}\"];\n"
+        return S
+    
+    def __str__(self):
+        S = f"{self.index}:"
+        for t in self.transitions:
+            S += f"\t {t}\n"
+        return S
+
 class FiniteAutomaton:
-    def __init__(self, statesNumber: int = 0, initState: int = 0, acceptingStates: list[int] = [], atomicProps: set[str] = set(), formulaStr: str = ""):
-        """The automaton can either be created by passing the number of states, the 
-        initial state, the accepting states and the atomic propsitions of the formula 
-        or by passing a string representing an LTLf formula"""
+    def __init__(self, statesNumber: int = 0, atomicProps: set[str] = set(), formulaStr: str = ""):
+        """The automaton can either be created by passing the number of states, 
+        and the atomic propsitions of the formula or by passing a string 
+        representing an LTLf formula"""
         
         if formulaStr != "":
-            from parse import parse, Result
+            from parse import parse
             from ltlf2dfa.parser.ltlf import LTLfParser
             import re
             
+            self.atomicProps: set[str] = set(re.findall('[a-z]+', formulaStr))
+            
             parser = LTLfParser()
             formula = parser(formulaStr)
-            
-            self.atomicProps: set[str] = set(re.findall('[a-z]+', formulaStr))
 
             dotsFormat = formula.to_dfa(False)
             
@@ -37,321 +81,223 @@ class FiniteAutomaton:
             
             firstLineT = parse("digraph {name} {", strLines[0])
             
-            name = firstLineT["name"]
+            self.name = firstLineT["name"]
+            
+            initLine = strLines[9].split("->")
     
             acceptingLine = strLines[6].split(";")
             acceptingLine = acceptingLine[1:len(acceptingLine) - 1]
             
-            acceptingStates = []
-            for n in acceptingLine:
-                acceptingStates.append(int(n))
-                
-            initLine = strLines[9].split("->")
-            initState = int(initLine[1].removesuffix(";"))
-            
             strLines = strLines[10:len(strLines) - 1]
             
-            transitions = []
-            statesNumber = 0
+            self.states: list[State] = [State(i) for i in range(len(strLines))]
+            self.statesNumber = len(strLines)
+            
+            self.acceptingStates: list[State] = []
+            for n in acceptingLine:
+                self.acceptingStates.append(self.states[int(n) - 1])
+                
+            self.initState: State = self.states[int(initLine[1].removesuffix(";")) - 1]
+            
             
             for line in strLines:
-                T = parse(" {start} -> {end} [label=\"{label}\"];", line)
+                T = parse(" {start} -> {target} [label=\"{label}\"];", line)
+
+                formula = parse_pl(T["label"])        
                 
-                transitions.append(Transition(int(T["start"]), int(T["end"]), T["label"])) # Remove one from MONA output (?)
-                statesNumber = max(statesNumber, int(T["start"]), int(T["end"]))
-                
-            statesNumber += 1 #TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
             
-            self.statesNumber = statesNumber
-            self.initState = initState
-            self.acceptingStates = acceptingStates
-            self.transitions: list[list[Transition]] = [[] for _ in range(self.statesNumber)]
+                for s in alphabet_it:
+                    if evaluate_pl(formula, set(s)):
+                        self.states[int(T["start"]) - 1].addTransition(self.states[int(T["target"]) - 1], set(s))
             
-            for t in transitions:
-                self.addTransition(t)
-                
+
         else:
             self.statesNumber: int = statesNumber
-            self.initState: int = initState
-            self.acceptingStates: list[int] = acceptingStates
-            self.transitions: list[list[Transition]] = [[] for _ in range(self.statesNumber)]
+            self.states: list[State] = [State(i) for i in range(self.statesNumber)]
+            self.initState: State = self.states[0]
+            self.acceptingStates: list[State] = []
             self.atomicProps = atomicProps
         
-    def addTransition(self, newTransition: Transition):
+    def addTransition(self, start: State, target: State, atomicPropositions: set[str]):
         """Add a new transition"""
-        
-        self.transitions[newTransition.s].append(newTransition)
+
+        self.states[start.index].addTransition(target, atomicPropositions)
         
     def reverseTransitions(self, reduce: bool = False) -> "FiniteAutomaton":
-        """Returns the NFA obtained from reversing all the transitions"""
+        """Returns a FA obtained from reversing all the transitions. 
+        The FA generated is non deterministic, but has complete transitions."""
         
-        nfa = FiniteAutomaton(self.statesNumber, self.acceptingStates[0], [self.initState], self.atomicProps) 
+        nfa = FiniteAutomaton(self.statesNumber, self.atomicProps) 
         
-        for state in range(self.statesNumber - 1):
-            for t in self.transitions[state + 1]:
-                reversedTransition = Transition(t.e, t.s, t.label)
-                nfa.addTransition(reversedTransition)
+        for state in self.states:
+            for t in state.transitions:
+                nfa.states[t.target.index].addTransition(state, t.ap)
         
-        nfa.completeTransitions()    
+        nfa.acceptingStates = [nfa.states[self.initState.index]]
+        
+        assert len(self.acceptingStates) == 1, print("More than one acceptting state!!!!")
+        
+        if len(self.acceptingStates) == 1:
+            nfa.initState = nfa.states[self.acceptingStates[0].index]
+            
+        # TODO: Complete transitions of init state first!!!!!!
+        for state in nfa.states:
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
+            for s in alphabet_it:
+                if len(state.computeTransition(set(s))) == 0:
+                    for q in nfa.initState.computeTransition(set(s)):
+                        state.addTransition(q, set(s))
         
         if reduce:
-            return nfa.reduce()
+            return nfa.removeUnreachableStates()
             
         return nfa
     
     def statesPowersetIterator(self):
-        """Returns an iterator that cylces over the ordered powerset of the states"""
+        """Returns an iterator that cylces over the ordered powerset of the automaton states"""
         
-        s = list(range(1, self.statesNumber))
-        return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
+        s = self.states
+        return chain.from_iterable(combinations(s, r) for r in range(1, len(s) + 1))
     
     def determinize(self, reduce: bool = False) -> "FiniteAutomaton":
-        """Compute the determinized DFA of an NFA"""
+        """Return the determinized automaton of this automaton"""
         
-        # The new DFA has 2^n states
-        newStatesNumber = pow(2, self.statesNumber - 1) + 1
-        
-        print("New states N:", newStatesNumber)
-        
-        newInitState = 1
-        
-        newAcceptingStates: set[int] = set()
-        
+        # The new DFA has 2^n - 1 states (Cardinality of the power set minus the empty set)
+        dfa = FiniteAutomaton(pow(2, self.statesNumber) - 1, self.atomicProps)
+
         # For each subset of the states save its index in the ordered powerset
         # The index is used as the id of the subset in the new automaton
         powerStateIndex = {}
         statesPowersetIter = self.statesPowersetIterator()
-        for i in range(1, newStatesNumber):
+        for i in range(0, dfa.statesNumber):
             currNewState = next(statesPowersetIter)
-            powerStateIndex[str(currNewState)] = i
-
-        newTransitions: list[list[Transition]] = [[] for _ in range(newStatesNumber)]
-        sinkTransition = False
-        
+            currNewStateIdx = set()
+            for m in currNewState:
+                currNewStateIdx.add(m.index)
+            powerStateIndex[str(currNewStateIdx)] = i
+            
         # Compute the new transitions, every new state (a subset 
         # of the old states) is associated with its index i.
         # i is the index of the subset in the sorted powerset
         statesPowersetIter = self.statesPowersetIterator()
-        for i in range(1, newStatesNumber):
+        for i in range(0, dfa.statesNumber):
             currNewState = next(statesPowersetIter)
             
             # The subset of the old states containg only the initial old state 
             # is the new initial state
             if (len(currNewState) == 1 and currNewState[0] == self.initState):
-                newInitState = i
-                
-            newStateTransitions: list[tuple[str, set[int]]] = []
-            
-            # for state in currNewState:
-                # for t in self.transitions[state]:
-                    # For each state in the current new state compute the union of
-                    # the arriving states of all the transitions with the same label 
+                dfa.initState = dfa.states[i]
                     
-                    # TODO: check how the transitions should be computed (Evaulation of the label??)
-                    # foundLabel = False
-                    # for newT in newStateTransitions:
-                    #     if newT[0] == t.label:
-                    #         newT[1].add(t.e)
-                    #         foundLabel = True
-
-                    # if not foundLabel:
-                    #     newStateTransitions.append((t.label, {t.e})) 
-                    
-            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
             
             for s in alphabet_it:
-                label = ""
-                for p in self.atomicProps:
-                    if len(label) != 0: label += "&& "
-                    if p in s:
-                        label += f"{p} "
-                    else:
-                        label += f"~({p}) "
-                targetState: set[int] = set()
+                targetState: set[State] = set()
                 
+                currNewStateIdx = set()
+                for m in currNewState:
+                    currNewStateIdx.add(m.index)
+                    
                 for state in currNewState:
-                    targetState = targetState.union(self.computeSetTransition({state}, list(s)))
+                    targetState = targetState.union(state.computeTransition(set(s)))
 
                     # If there is an intersection beetween the old accepting state
                     # and the new current state i add i to the new accepting states
                     for oldAcceptingState in self.acceptingStates:
-                        if oldAcceptingState == state:
-                            newAcceptingStates.add(i)
+                        if oldAcceptingState.index == state.index:
+                            dfa.acceptingStates.append(dfa.states[powerStateIndex[str(currNewStateIdx)]])
                             break
                 
                 if len(targetState) > 0:
-                    targetStateFound = False
-                    for t in newStateTransitions:
-                        if t[1] == targetState:
-                            newLabel = t[0] + "|| " + label
-                            newStateTransitions.remove(t)
-                            newStateTransitions.append((newLabel, targetState))
-                            targetStateFound = True
-                            break                    
-                    if not targetStateFound:
-                        newStateTransitions.append((label, targetState))
-                # else:
-                    # if not sinkTransition:
-                    #     sinkTransition = True
-                    #     newStatesNumber += 1
-                    #     newTransitions.append([Transition(newStatesNumber - 1, newStatesNumber - 1, "true")])
+                    targetStateIdx = set()
+                    for m in targetState:
+                        targetStateIdx.add(m.index)
+                    dfa.states[i].addTransition(dfa.states[powerStateIndex[str(targetStateIdx)]], set(s))
 
-                    # newTransitions[i].append(Transition(i, newStatesNumber - 1, label))
-                    
-            for t in newStateTransitions:
-                L = list(t[1])
-                L.sort()
-                newTransitions[i].append(Transition(i, powerStateIndex[str(tuple(L))], t[0]))
-                
-            if len(newStateTransitions) == 0:
-                newTransitions[i].append(Transition(i, i, "true"))
-                
-        dfa = FiniteAutomaton(newStatesNumber, newInitState, list(newAcceptingStates), self.atomicProps)
-        dfa.transitions = newTransitions
-        
         if reduce:
             return dfa.minimize()
 
         return dfa
     
     def minimize(self) -> "FiniteAutomaton":
-        # Removing unreachable states
-        FA = self.removeUnreachableStates()
-        nfa = FA.reverseTransitions().removeUnreachableStates()
-        dfa = FA.determinize().removeUnreachableStates()
+        """Minimizes the automaton"""
         
-        return dfa
+        # Removing unreachable states
+        nfa = self.removeUnreachableStates().reverseTransitions()
+        dfa = nfa.determinize().removeUnreachableStates()
+        nfa1 = dfa.reverseTransitions()
+        
+        return nfa1.determinize().removeUnreachableStates()
     
     def removeUnreachableStates(self) -> "FiniteAutomaton":
-        reachable: set[int] = {1}
-        newStates: set[int] = {1}
+        """Removes all the dead states in the automaton."""
+        reachable: set[int] = {self.initState.index}
+        newStates: set[int] = {self.initState.index}
         
         while len(newStates) > 0:
             temp: set[int] = set()
             
             for q in newStates:
-                alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
+                alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
             
                 for s in alphabet_it:
-                    temp = temp.union(self.computeSetTransition({q}, list(s)))
+                    temp = temp.union(self.computeSetTransition({self.states[q]}, list(s)))
                     
             newStates = temp.difference(reachable)
             reachable = reachable.union(newStates)
             
+        FA = FiniteAutomaton(len(reachable), self.atomicProps)  
+            
         newStateId: list[int] = [-1 for _ in range(self.statesNumber)]
-        newAcceptingStates: list[int] = []
         reachableL = list(reachable)
         
         for i in range(len(reachableL)):
             q = reachableL[i]
-            newStateId[q] = i + 1
-            if q in self.acceptingStates:
-                newAcceptingStates.append(i + 1)
+            newStateId[q] = i
             
-        newTransitions: list[list[Transition]] = [[]]
-        
-        currStateId = 1
-        for i in range(1, len(self.transitions)):
-            if not (i in reachable): continue
-            newTransitions.append([])
+            if self.states[q] in self.acceptingStates:
+                FA.acceptingStates.append(FA.states[newStateId[q]])
             
-            T = self.transitions[i]
+        FA.initState = FA.states[newStateId[self.initState.index]]
+        
+        for q in reachableL:
+            oldState = self.states[q]
             
-            for t in T:
-                if not (t.e in reachable): continue
-                newTransitions[currStateId].append(Transition(newStateId[t.s], newStateId[t.e], t.label))
-                
-            currStateId += 1
-            
-        minDfa = FiniteAutomaton(len(reachable) + 1, 1, newAcceptingStates, self.atomicProps)
-        minDfa.transitions = newTransitions
+            for t in oldState.transitions:
+                if t.target.index in reachable:
+                    FA.states[newStateId[q]].addTransition(FA.states[newStateId[t.target.index]], t.ap)
         
-        return minDfa    
-
-    def reduce(self) -> "FiniteAutomaton":
-        """Remove all the states that cannot be visited"""
-        
-        newStateId: list[int] = [-1 for _ in range(self.statesNumber)]
-        newTransitions: list[list[Transition]] = [[]]
-        newAcceptingStates: list[int] = []
-        
-        nVisited = self.visitAutomaton(self.initState, 1, newStateId, newTransitions, newAcceptingStates)
-
-        newAutomaton = FiniteAutomaton(nVisited + 1, 1, newAcceptingStates, self.atomicProps)
-        newAutomaton.transitions = newTransitions        
-        
-        return newAutomaton
+        return FA    
     
-    def visitAutomaton(self, i: int, count: int, newStateId: list[int], newTransitions: list[list[Transition]], newAcceptingStates: list[int]) -> int:
-        """Search the automaton with a DFS"""
+    def computeSetTransition(self, statesSet: set[State], propositionalInterpretation: list[str]) -> set[int]:
+        """Given a set of states returns all the indexes of the state reachable with the given 
+        propositional interpretation"""
         
-        newStateId[i] = count
-        newTransitions.append([])
-        
-        for state in self.acceptingStates:
-            if state == i:
-                newAcceptingStates.append(newStateId[i])
-                break
-            
-        nVisited = 1
-        
-        for t in self.transitions[i]:
-            vic = t.e
-            
-            if (newStateId[vic] < 0):
-                newlyVisited = self.visitAutomaton(vic, count + 1, newStateId, newTransitions, newAcceptingStates)
-                count += newlyVisited
-                nVisited += newlyVisited
-                
-            start = newStateId[i]
-            end = newStateId[vic]
-            
-            newTransitions[start].append(Transition(start, end, t.label))
-        
-        return nVisited
-    
-    def computeSetTransition(self, statesSet: set[int], prop_int: list[str]) -> set[int]:
         # TODO: prop_int list[str] -> set[str]
         S: set[int] = set()
         
         for q in statesSet:
-            for t in self.transitions[q]:
-                if t.evaluate(set(prop_int)):
-                    S.add(t.e)
+            for state in q.computeTransition(set(propositionalInterpretation)):
+                S.add(state.index)
         
         return S
 
-    def completeTransitions(self) -> None:
-        for i in range(self.statesNumber):
-            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
-            
-            for s in alphabet_it:
-                label = ""
-                for p in self.atomicProps:
-                    if len(label) != 0: label += "&& "
-                    if p in s:
-                        label += f"{p} "
-                    else:
-                        label += f"~({p}) "
-                        
-                    if len(self.computeSetTransition({i}, list(s))) == 0:
-                        self.addTransition(Transition(i, self.initState, label))
-        
     def __str__(self) -> str:
         S: str = f"""Numero di stati: {self.statesNumber}
-Stato iniziale: {self.initState}
+Stato iniziale: {self.initState.index}
 Stati accettanti: """
         for state in self.acceptingStates:
-            S += str(state) + " "
+            S += str(state.index) + " "
             
         S += "\nTransizioni: \n"
-        for state in range(self.statesNumber - 1):
-            for transition in self.transitions[state + 1]:
-                S += str(transition) + "\n"
+        for state in self.states:
+            S += state.transitionsToDot(self.atomicProps)
+            
         return S
     
     def toDot(self) -> str:
-        """Return the dots format of the automaton."""
+        """Return a string representing the dot format of the automaton."""
+        
         S: str = "digraph FA "
         S += """{
     rankdir = LR;
@@ -360,19 +306,18 @@ Stati accettanti: """
     node [height = .5, width = .5];
     node [shape = doublecircle];"""
         for state in self.acceptingStates:
-            S += str(state) + ";"
-        S += "\n\tnode [shape = circle];" + str(self.initState) + ";"
-        S += "\n\tinit [shape = plaintext, label = \"\"];\n\tinit -> " + str(self.initState) + ";\n"
+            S += str(state.index) + ";"
+        S += "\n\tnode [shape = circle];" + str(self.initState.index) + ";"
+        S += "\n\tinit [shape = plaintext, label = \"\"];\n\tinit -> " + str(self.initState.index) + ";\n"
         
-        for state in range(self.statesNumber - 1):
-            for transition in self.transitions[state + 1]: 
-                S += f"\t{transition.s} -> {transition.e} [label=\"{transition.label}\"];\n"
+        for state in self.states:
+            S += state.transitionsToDot(self.atomicProps)
         
         S += "}"
         return S
     
     def visualize(self, imageName = "Unnamed", imagePath = "img/", format = "svg") -> None:
-        """Save a SVG image of the graph using graphiz"""
+        """Save a representation in the given format of the automaton using graphiz."""
         
         from graphviz import Source
         

@@ -15,12 +15,13 @@ formula_str = "a && X(a)"
 # formula_str = "X(b)"
 # formula_str = "a U c"
 
-d = FiniteAutomaton(formulaStr=formula_str)
-rev = d.reverseTransitions(reduce=True)
-det = rev.determinize(reduce=False)
 
+d = FiniteAutomaton(formulaStr=formula_str)
 d.visualize("_1_dfa", imagesFolder, "svg")
+rev = d.reverseTransitions(reduce=True)
 rev.visualize("_2_rev", imagesFolder, "svg")
+
+det = rev.determinize(reduce=False).removeUnreachableStates()
 det.visualize("_3_det", imagesFolder, "svg")
 
 T = TSA(det)
