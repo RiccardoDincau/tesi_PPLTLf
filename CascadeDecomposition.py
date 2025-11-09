@@ -1,6 +1,10 @@
-from TSA import TSA, TSANode
-from FiniteAutomaton import FiniteAutomaton
+from TSA import TSA
+from FiniteAutomaton import FiniteAutomaton, State
 from itertools import combinations, chain
+
+from pylogics.syntax.base import Logic, Not, And, Or
+from pylogics.syntax.pltl import Atomic as PltlAtomic, PropositionalTrue as PltlTrue, PropositionalFalse as PltlFalse
+from pylogics.syntax.pltl import Formula, Before, Since, Once, Historically
 
 class CascadeAutomaton:
     def __init__(self, layer: int, parentCA: "CascadeAutomaton | None", tsa: TSA) -> None:
@@ -8,10 +12,12 @@ class CascadeAutomaton:
         # Theta is the identity function because it is a reset automaton
         
         self.layer = layer
-        self.Q: list[int] = [] # Each set represent a group of siblings
+        self.Q: list[int] = []
 
         self.psiInv: dict[tuple[int, ...], int] = {}  
+        self.atomicProps: set[str] = tsa.atomicProps
         
+        # (currentAutomatonState, parentState, propositionalInterpretation) => currentAutomatonState
         self.delta: dict[tuple[int, tuple[int, ...], tuple[str, ...]], int] = {}
         
         if layer == 0:
@@ -48,11 +54,47 @@ class CascadeAutomaton:
                             coord: tuple[int, tuple[int, ...], tuple[str, ...]] = (q, p, s)
                             inv = self.psiInv[config]
                             key = str(set(s))
+                            
                             if key in tsa.nodes[inv].trans:
-                                # print(f"inv: { self.psiInv[config]}, ts: {tsa.nodes[self.psiInv[config]].trans}")
                                 self.delta[coord] = tsa.nodes[inv].trans[key]
                             else:
-                                print("!!!! row 55")                            
+                                print("!!!! row 55")  
+                                
+    def computeStateIns(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
+        ins: list[tuple[tuple[int, ...], set[str]]] = [] 
+        for k in self.delta.keys():
+            if self.delta[k] == state:
+                ins.append((k[1], set(k[2])))
+        return ins
+    
+    def computeStateOuts(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
+        outs: list[tuple[tuple[int, ...], set[str]]] = [] 
+        for k in self.delta.keys():
+            if k[0] == state:
+                outs.append((k[1], set(k[2])))    
+        return outs
+
+    def propIntToStr(self, propositionalInterpretation: set[str]) -> str:
+        S = ""
+        for p in self.atomicProps:
+            if len(S) > 0:
+                S += " && "
+            if p in propositionalInterpretation:
+                S += f"{p}"
+            else:
+                S += f"~{p}"
+        
+        return S     
+
+    def configToStr(self, config: tuple[int, ...]) -> str:
+        S = ""
+        for l in list(config):
+            if len(S) > 0:
+                S += ","
+            S += chr(ord("A") + l)
+
+        return S
+                                
     def toDot(self) -> str:
         S: str = f"digraph CA "
         S += """{
@@ -71,13 +113,14 @@ class CascadeAutomaton:
         S: str = ""
         S += "{"
         for q in self.Q:
+            letter = chr(ord("A") + q)
             if tsa != None:
-                S += f"\n\t{q} [label=\"{q} {tsa.nodes[q].states}\"]"
+                S += f"\n\t{q} [label=\"{letter} {tsa.nodes[q].states}\"]"
             else:
-                S += f"\n\t{q}"
+                S += f"\n\t{q} [label=\"{letter}]"
             
         for k in self.delta.keys():
-            S += f"\n\t{k[0]} -> {self.delta[k]} [label=\"{k[1]}{k[2]}\"];"
+            S += f"\n\t{k[0]} -> {self.delta[k]} [label=\"[{self.configToStr(k[1])}] {self.propIntToStr(set(k[2]))}\"];"
     
         S += "\n}\n"
         return S
@@ -96,18 +139,124 @@ class CascadeDecomposition:
         FiniteAutomaton representing a temporal logic formula"""
         
         self.tsa = TSA(dfa)
+        self.dfaStatesNumber = dfa.statesNumber
+        self.dfaAcceptingStates = dfa.acceptingStates
 
         self.CAs: list[CascadeAutomaton] = [CascadeAutomaton(0, None, self.tsa)]
         for layer in range(1, self.tsa.height + 1):
-            newCA = CascadeAutomaton(layer,self.CAs[layer - 1], self.tsa)
+            newCA = CascadeAutomaton(layer, self.CAs[layer - 1], self.tsa)
             self.CAs.append(newCA)
-            # newCA.visualize(f"ca_{layer}", "imgs/CA/")
-
-    def computeTheta(self):
-        """Computes the theta function of the i-th level. Given that
-        the automaton is counter-free this is effectevly a function from
-        the children of each node to this same nodes."""
+            
+        self.stateToCa: dict[int, CascadeAutomaton] = {}
+        for CA in self.CAs:
+            for q in CA.Q:
+                self.stateToCa[q] = CA
+                
+        self.phiInv = self.computePhiInv()
+            
+    def synthetizeFormula(self) -> Formula:
+        res: Formula | None = None
         
+        for state in self.dfaAcceptingStates:
+            if res == None:
+                res = self.accpetingStateFormula(state)
+            else:
+                res = Or(res, self.accpetingStateFormula(state))
+
+        assert res != None
+        
+        return res
+
+    def accpetingStateFormula(self, s: State) -> Formula:
+        res: Formula | None = None
+        
+        for config in self.phiInv[s.index]:
+            if res == None:
+                res = self.configurationFormula(config)
+            else:
+                res = Or(res, self.configurationFormula(config))
+
+        assert res != None
+        
+        return res
+    
+    def configurationFormula(self, config: tuple[int, ...]) -> Formula:
+        res: Formula | None = None
+        
+        for q in list(config):
+            if res == None:
+                res = self.CAStateFormula(q)
+            else:
+                res = Or(res, self.CAStateFormula(q))
+        
+        assert res != None, print("Configuration is empty!")
+        
+        return res
+        
+    def CAStateFormula(self, q: int) -> Formula:
+        # The first state is always the trivial one-state automaton
+        if q == 0:
+            return PltlTrue()
+        
+        CA = self.stateToCa[q]
+        
+        ins = CA.computeStateIns(q)
+        outs = CA.computeStateOuts(q)
+        
+        inFromula: Formula | None = None
+        
+        for c in ins:
+            f: Formula = Or(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
+            
+            if inFromula == None:
+                inFromula = f
+            else:
+                inFromula = Or(inFromula, f)  
+                 
+        outFromula: Formula | None = None
+        
+        for c in outs:
+            f: Formula = Or(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
+            
+            if outFromula == None:
+                outFromula = f
+            else:
+                outFromula = Or(outFromula, f)    
+        
+        assert inFromula != None
+        assert outFromula != None            
+
+        return Since(Not(outFromula), inFromula) 
+    
+    def propIntToFormula(self, propInt: set[str]) -> Formula:
+        res: Formula | None = None
+        
+        for s in self.tsa.atomicProps:
+            f: Formula
+            if s in propInt:
+                f = PltlAtomic(s)
+            else:
+                f = Not(PltlAtomic(s))
+            
+            if res == None:
+                res = f
+            else:
+                res = And(res, f)
+                
+        assert res != None, print("There is not an atomic proposition!")
+                
+        return res
+
+    def computePhiInv(self) -> list[list[tuple[int, ...]]]:
+        phiInv: list[list[tuple[int, ...]]] = [[] for _ in range(self.dfaStatesNumber)]
+        
+        lastCa = self.CAs[len(self.CAs) - 1]
+        for config in lastCa.psiInv.keys():
+            for q in self.tsa.nodes[lastCa.psiInv[config]].states:
+                phiInv[q].append(config)
+        
+        return phiInv
+
     def toDot(self) -> str:
         S: str = f"digraph CD "
         S += """{
