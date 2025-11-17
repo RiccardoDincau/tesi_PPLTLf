@@ -142,7 +142,7 @@ class TSA:
                     rSet.add(DFA.states[stateIdx])
                 F: set[int] = DFA.computeSetTransition(rSet, list(s))
                 m_1 = self.nodes[m.trans[str(set(s))]]
-                
+
                 for r_1 in self.nodes:
                     # Condition???
                     if r_1.states == F and (m_1.index in self.getAncestors(r_1)):
@@ -310,7 +310,7 @@ class TSA:
         
         for idx in self.getDescendants(ancestor):
             m = self.nodes[idx]
-            
+                
             if (m.states.issuperset(subset)) and len(m.states) < len(res.states):
                 res = m
         

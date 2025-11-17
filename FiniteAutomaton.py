@@ -3,9 +3,10 @@ from pylogics.parsers import parse_pl
 from pylogics.semantics.pl import evaluate_pl
 
 class Transition:
-    def __init__(self, target: "State", atomicPropositions: set[str]):
+    def __init__(self, target: "State", atomicPropositions: set[str], isEps: bool = False):
         self.target: State = target
         self.ap: set[str] = atomicPropositions
+        self.isEps = isEps
         
     def evaluate(self, atProps: set[str]) -> bool:
         """Return True if atProps satisfies the transition formula, False otherwise."""
@@ -13,6 +14,9 @@ class Transition:
         return self.ap == atProps
     
     def formulaToStr(self, allProps: set[str]) -> str:
+        if self.isEps:
+            return "eps"
+        
         S = ""
         for p in allProps:
             if len(S) > 0:
@@ -24,15 +28,15 @@ class Transition:
         return S
     
     def __str__(self) -> str:
-        return f"-> {self.target.index} ({self.ap})"
+        return f"-> {self.target.index} ({self.ap if not self.isEps else 'eps'})"
         
 class State:
     def __init__(self, index: int) -> None:
         self.index: int = index
         self.transitions: list[Transition] = []
         
-    def addTransition(self, target: "State", atomicPropositions: set[str]) -> None:
-        self.transitions.append(Transition(target, atomicPropositions))
+    def addTransition(self, target: "State", atomicPropositions: set[str], isEps: bool = False) -> None:
+        self.transitions.append(Transition(target, atomicPropositions, isEps))
         
     def computeTransition(self, atomicPropositions: set[str]) -> set["State"]:
         """Computes the set of states reachable from this one with the given
@@ -42,8 +46,11 @@ class State:
         res: set["State"] = set()
         
         for t in self.transitions:
-            if t.evaluate(atomicPropositions):
-                res.add(t.target)
+            if t.isEps:
+                res = res.union(t.target.computeTransition(atomicPropositions))
+            else:
+                if t.evaluate(atomicPropositions):
+                    res.add(t.target)
             
         return res
     
@@ -71,6 +78,8 @@ class FiniteAutomaton:
             import re
             
             self.atomicProps: set[str] = set(re.findall('[a-z]+', formulaStr))
+            if "true" in self.atomicProps: self.atomicProps.remove("true")
+            if "false" in self.atomicProps: self.atomicProps.remove("false")
             
             parser = LTLfParser()
             formula = parser(formulaStr)
@@ -111,7 +120,6 @@ class FiniteAutomaton:
                     if evaluate_pl(formula, set(s)):
                         self.states[int(T["start"]) - 1].addTransition(self.states[int(T["target"]) - 1], set(s))
             
-
         else:
             self.statesNumber: int = statesNumber
             self.states: list[State] = [State(i) for i in range(self.statesNumber)]
@@ -128,26 +136,26 @@ class FiniteAutomaton:
         """Returns a FA obtained from reversing all the transitions. 
         The FA generated is non deterministic, but has complete transitions."""
         
-        nfa = FiniteAutomaton(self.statesNumber, self.atomicProps) 
+        nfa = FiniteAutomaton(self.statesNumber + 1, self.atomicProps) 
         
         for state in self.states:
             for t in state.transitions:
-                nfa.states[t.target.index].addTransition(state, t.ap)
+                nfa.states[t.target.index].addTransition(nfa.states[state.index], t.ap)
         
         nfa.acceptingStates = [nfa.states[self.initState.index]]
         
-        assert len(self.acceptingStates) == 1, print("More than one acceptting state!!!!")
+        nfa.initState = nfa.states[nfa.statesNumber - 1]
+        for state in self.acceptingStates:
+            nfa.initState.addTransition(nfa.states[state.index], set(), True)
         
-        if len(self.acceptingStates) == 1:
-            nfa.initState = nfa.states[self.acceptingStates[0].index]
+        # for state in nfa.states:
+        #     if state == nfa.initState: continue
             
-        # TODO: Complete transitions of init state first!!!!!!
-        for state in nfa.states:
-            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
-            for s in alphabet_it:
-                if len(state.computeTransition(set(s))) == 0:
-                    for q in nfa.initState.computeTransition(set(s)):
-                        state.addTransition(q, set(s))
+        #     alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
+        #     for s in alphabet_it:
+        #         if len(state.computeTransition(set(s))) == 0:
+        #             for q in nfa.initState.computeTransition(set(s)):
+        #                 state.addTransition(q, set(s))
         
         if reduce:
             return nfa.removeUnreachableStates()
@@ -170,6 +178,7 @@ class FiniteAutomaton:
         # The index is used as the id of the subset in the new automaton
         powerStateIndex = {}
         statesPowersetIter = self.statesPowersetIterator()
+        
         for i in range(0, dfa.statesNumber):
             currNewState = next(statesPowersetIter)
             currNewStateIdx = set()
@@ -177,17 +186,24 @@ class FiniteAutomaton:
                 currNewStateIdx.add(m.index)
             powerStateIndex[str(currNewStateIdx)] = i
             
+        epsClosure = {self.initState.index}
+        for t in self.initState.transitions:
+            if t.isEps:
+                epsClosure.add(t.target.index)
+                
+        dfa.initState = dfa.states[powerStateIndex[str(epsClosure)]]
+            
         # Compute the new transitions, every new state (a subset 
         # of the old states) is associated with its index i.
         # i is the index of the subset in the sorted powerset
         statesPowersetIter = self.statesPowersetIterator()
         for i in range(0, dfa.statesNumber):
             currNewState = next(statesPowersetIter)
-            
+
             # The subset of the old states containg only the initial old state 
             # is the new initial state
-            if (len(currNewState) == 1 and currNewState[0] == self.initState):
-                dfa.initState = dfa.states[i]
+            # if (len(currNewState) == 1 and currNewState[0] == self.initState):
+            #     dfa.initState = dfa.states[i]
                     
             alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
             
@@ -265,7 +281,7 @@ class FiniteAutomaton:
             
             for t in oldState.transitions:
                 if t.target.index in reachable:
-                    FA.states[newStateId[q]].addTransition(FA.states[newStateId[t.target.index]], t.ap)
+                    FA.states[newStateId[q]].addTransition(FA.states[newStateId[t.target.index]], t.ap, t.isEps)
         
         return FA    
     

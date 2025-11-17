@@ -162,7 +162,7 @@ class CascadeDecomposition:
                 res = self.accpetingStateFormula(state)
             else:
                 res = Or(res, self.accpetingStateFormula(state))
-
+                
         assert res != None
         
         return res
@@ -187,7 +187,7 @@ class CascadeDecomposition:
             if res == None:
                 res = self.CAStateFormula(q)
             else:
-                res = Or(res, self.CAStateFormula(q))
+                res = And(res, self.CAStateFormula(q))
         
         assert res != None, print("Configuration is empty!")
         
@@ -206,7 +206,7 @@ class CascadeDecomposition:
         inFromula: Formula | None = None
         
         for c in ins:
-            f: Formula = Or(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
+            f: Formula = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
             
             if inFromula == None:
                 inFromula = f
@@ -216,14 +216,16 @@ class CascadeDecomposition:
         outFromula: Formula | None = None
         
         for c in outs:
-            f: Formula = Or(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
+            f: Formula = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
             
             if outFromula == None:
                 outFromula = f
             else:
                 outFromula = Or(outFromula, f)    
         
-        assert inFromula != None
+        if inFromula == None:
+            inFromula = PltlFalse()
+            
         assert outFromula != None            
 
         return Since(Not(outFromula), inFromula) 
@@ -280,4 +282,3 @@ class CascadeDecomposition:
         
         src = Source(self.toDot())
         src.render(imagePath + imageName, format = format, view = False)
-  

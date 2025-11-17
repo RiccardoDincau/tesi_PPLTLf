@@ -1,7 +1,6 @@
 from FiniteAutomaton import FiniteAutomaton
 from TSA import TSA
 from CascadeDecomposition import CascadeDecomposition
-from pltl2ltl import convertToString, switchPltlToLtl
 # from CLI.formulaInput import askFormula
 
 imagesFolder = "imgs/svgs/"
@@ -13,7 +12,7 @@ formula_str = "a U c && (X b)"
 # formula_str = "(a || c) && X(b)"
 formula_str = "a && X(a && !X(a))"
 formula_str = "a && X(b U !a) || !a && X(!a)"
-formula_str = "a && X(a)"
+formula_str = "X(a)"
 # formula_str = "X(b)"
 # formula_str = "a U c"
 
