@@ -353,9 +353,9 @@ class TSA:
         return res
     
     def isomorphicAutomaton(self) -> FiniteAutomaton:
-        fa = FiniteAutomaton(len(self.heightClasses[self.height - 1]), self.atomicProps)
+        fa = FiniteAutomaton(len(self.heightClasses[0]), self.atomicProps)
         
-        for m in self.heightClasses[self.height - 1]:
+        for m in self.heightClasses[0]:
             stateIdx = list(self.nodes[m].states)[0]
             for t in self.nodes[m].trans:
                 targetIdx = list(t.target.states)[0]
