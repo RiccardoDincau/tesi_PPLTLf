@@ -141,6 +141,7 @@ class CascadeDecomposition:
         self.tsa = TSA(dfa)
         self.dfaStatesNumber = dfa.statesNumber
         self.dfaAcceptingStates = dfa.acceptingStates
+        self.dfaInitState = dfa.initState
 
         self.CAs: list[CascadeAutomaton] = [CascadeAutomaton(0, None, self.tsa)]
         for layer in range(1, self.tsa.height + 1):
@@ -158,23 +159,29 @@ class CascadeDecomposition:
         res: Formula | None = None
         
         for state in self.dfaAcceptingStates:
+            f: Formula = self.automatonStateFormula(state)
+            
             if res == None:
-                res = self.accpetingStateFormula(state)
+                res = f
             else:
-                res = Or(res, self.accpetingStateFormula(state))
+                res = Or(res, f)
                 
         assert res != None
         
         return res
 
-    def accpetingStateFormula(self, s: State) -> Formula:
+    def automatonStateFormula(self, s: State) -> Formula:
         res: Formula | None = None
         
         for config in self.phiInv[s.index]:
+            f: Formula = self.configurationFormula(config)
+
             if res == None:
-                res = self.configurationFormula(config)
+                res = f
             else:
-                res = Or(res, self.configurationFormula(config))
+                res = Or(res, f)
+                
+        # print("State:", s.index, ", f:", res)
 
         assert res != None
         
@@ -184,10 +191,12 @@ class CascadeDecomposition:
         res: Formula | None = None
         
         for q in list(config):
+            f: Formula = self.CAStateFormula(q)
+
             if res == None:
-                res = self.CAStateFormula(q)
+                res = f
             else:
-                res = And(res, self.CAStateFormula(q))
+                res = And(res, f)
         
         assert res != None, print("Configuration is empty!")
         
@@ -195,9 +204,6 @@ class CascadeDecomposition:
         
     def CAStateFormula(self, q: int) -> Formula:
         # The first state is always the trivial one-state automaton
-        if q == 0:
-            return PltlTrue()
-        
         CA = self.stateToCa[q]
         
         ins = CA.computeStateIns(q)
@@ -206,8 +212,12 @@ class CascadeDecomposition:
         inFromula: Formula | None = None
         
         for c in ins:
-            f: Formula = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
-            
+            f: Formula
+            if q == 0:
+                f = self.propIntToFormula(c[1])
+            else:
+                f = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
+                
             if inFromula == None:
                 inFromula = f
             else:
@@ -216,8 +226,12 @@ class CascadeDecomposition:
         outFromula: Formula | None = None
         
         for c in outs:
-            f: Formula = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
-            
+            f: Formula
+            if q == 0:
+                f = self.propIntToFormula(c[1])
+            else:
+                f = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
+                
             if outFromula == None:
                 outFromula = f
             else:
@@ -226,7 +240,9 @@ class CascadeDecomposition:
         if inFromula == None:
             inFromula = PltlFalse()
             
-        assert outFromula != None            
+        assert outFromula != None     
+        
+        # print("q:", q, ", f:", Since(Not(outFromula), inFromula))
 
         return Since(Not(outFromula), inFromula) 
     
@@ -244,10 +260,28 @@ class CascadeDecomposition:
                 res = f
             else:
                 res = And(res, f)
-                
+                        
         assert res != None, print("There is not an atomic proposition!")
                 
         return res
+        
+    #     name: str = ""
+    #     for s in self.tsa.atomicProps:
+    #         f: str
+    #         if s in propInt:
+    #             f = s
+    #         else:
+    #             f = f""
+            
+    #         if name == "None":
+    #             name = f
+    #         else:
+    #             name = f"{name}{f}"
+                
+    #     if name == "":
+    #         name = "empt"
+        
+    #     return PltlAtomic(name)
 
     def computePhiInv(self) -> list[list[tuple[int, ...]]]:
         phiInv: list[list[tuple[int, ...]]] = [[] for _ in range(self.dfaStatesNumber)]
@@ -259,6 +293,67 @@ class CascadeDecomposition:
         
         return phiInv
 
+    def isomorphicAutomaton(self) -> FiniteAutomaton:
+        fa = FiniteAutomaton(len(self.phiInv), self.tsa.atomicProps)
+        
+        configToState: dict[tuple[int, ...], int] = {}
+        i = 0
+        for config in self.computeConfigurations(0, [()]):
+            configToState[config] = i
+            i += 1
+            
+        print("len:", fa.statesNumber, ", config:", self.computeConfigurations(0, [()]), ", CTOF:", configToState)
+        print("phiInv:", self.phiInv)
+                
+        for state in fa.states:
+            alphabet_it = chain.from_iterable(combinations(fa.atomicProps, r) for r in range(len(fa.atomicProps)+1))
+            
+            for s in alphabet_it:
+                for config in self.phiInv[state.index]:
+                    targetConfig = self.computeConfigurationTransition(0, config, (), s)
+                        
+                    if targetConfig != None:
+                        targetState = fa.states[list(self.tsa.nodes[self.CAs[len(self.CAs) - 1].psiInv[targetConfig]].states)[0]]
+                        
+                        alreadyExists = False
+                        for t in state.transitions:
+                            if t.target == targetState and t.ap == set(s):
+                                alreadyExists = True
+                                break
+                            
+                        if not alreadyExists:
+                            fa.addTransition(state, targetState, set(s))
+        
+        for accState in self.dfaAcceptingStates:
+            fa.acceptingStates.append(fa.states[accState.index])
+            
+        fa.initState = fa.states[self.dfaInitState.index]
+        
+        return fa
+    
+    def computeConfigurations(self, layer: int, config: list[tuple[int, ...]]) -> list[tuple[int, ...]]:
+        newConfig = []
+        for i in range(len(config)):
+            for state in self.CAs[layer].Q:
+                newConfig.append(config[i] + (state, ))
+        
+        if layer == len(self.CAs) - 1:
+            return newConfig
+        else:
+            return self.computeConfigurations(layer + 1, newConfig)
+        
+    def computeConfigurationTransition(self, layer: int, config: tuple[int, ...], prevTarget: tuple[int, ...], s: tuple[str, ...]) -> tuple[int, ...] | None:
+        if (config[layer], prevTarget, s) in self.CAs[layer].delta.keys():
+            target: tuple[int, ...] = prevTarget + (self.CAs[layer].delta[(config[layer], prevTarget, s)], )
+        else:
+            return None
+        
+        if layer == len(self.CAs) - 1:
+            return target
+        else:
+            return self.computeConfigurationTransition(layer + 1, config, target, s)
+
+    
     def toDot(self) -> str:
         S: str = f"digraph CD "
         S += """{
