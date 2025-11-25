@@ -30,7 +30,10 @@ class CascadeAutomaton:
             
             for s in alphabet_it:
                 coord: tuple[int, tuple[int, ...], tuple[str, ...]] = (0, tuple(), s) 
-                self.delta[coord] = tsa.nodes[0].trans[str(set(s))]
+                target = tsa.nodes[0].computeTransition(set(s))
+                assert target != None
+                
+                self.delta[coord] = target.index
         else:
             assert parentCA != None
             
@@ -53,12 +56,14 @@ class CascadeAutomaton:
                         for s in alphabet_it:
                             coord: tuple[int, tuple[int, ...], tuple[str, ...]] = (q, p, s)
                             inv = self.psiInv[config]
-                            key = str(set(s))
                             
-                            if key in tsa.nodes[inv].trans:
-                                self.delta[coord] = tsa.nodes[inv].trans[key]
-                            else:
-                                print("!!!! row 55")  
+                            
+                            
+                            for t in tsa.nodes[inv].trans:
+                                if t.ap == set(s):
+                                    self.delta[coord] = t.target.index
+                                else:
+                                    print("!!!! row 55")  
                                 
     def computeStateIns(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
         ins: list[tuple[tuple[int, ...], set[str]]] = [] 

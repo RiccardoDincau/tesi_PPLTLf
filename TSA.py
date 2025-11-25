@@ -1,6 +1,20 @@
 from FiniteAutomaton import FiniteAutomaton
 from itertools import combinations, chain
 
+class TSATransition:
+    def __init__(self, target: "TSANode", propAt: set[str]) -> None:
+        self.target = target
+        self.ap = propAt
+        
+    def evaluate(self, atProps: set[str]) -> bool:
+        """Return True if atProps satisfies the transition formula, False otherwise."""
+        
+        return self.ap == atProps
+        
+    def __str__(self) -> str:
+        return f"{self.ap} -> {self.target.index}"   
+    
+
 class TSANode:
     """Contains nodes used in TSA. It has a parenthood 
     function, a transition function and a map to
@@ -12,7 +26,7 @@ class TSANode:
         self.parent: TSANode | None = None # if < 0, then it is the root
         self.children: set[int] = set()
         
-        self.trans: dict[str, int] = {} 
+        self.trans: list[TSATransition] = []
         self.states: set[int] = states #Subset of states of the FA
         
         self.equivClass = -1
@@ -26,13 +40,27 @@ class TSANode:
         self.parent = newParent
         newParent.children.add(self.index)
         
-    def setTransition(self, target: "TSANode", prop_int: str):
-        self.trans[prop_int] = target.index
+    def addTransition(self, target: "TSANode", prop_int: set[str]):
+        for t in self.trans:
+            if t.ap == prop_int:
+                self.trans.remove(t)
+                break
+            
+        self.trans.append(TSATransition(target, prop_int))
+        
+        
+    def computeTransition(self, atProp: set[str]) -> "TSANode | None":
+        for t in self.trans:
+            if t.evaluate(atProp):
+                return t.target
+            
+        return None
     
     def __str__(self) -> str:
         S = f"{self.index}) pi: {self.parent.index if self.parent != None else 'None'}, phi: {self.states}, delta: ["
-        for k in self.trans.keys():
-            S += f" {k} -> {self.trans[k]},"
+        for t in self.trans:
+            S += str(t)            
+        
         return S + " ]"
         
 class TSA:
@@ -84,7 +112,8 @@ class TSA:
                     r_1.addParent(r)
                 else:
                     m = r.parent
-                    m_1 = self.nodes[m.trans[str(set(s))]]
+                    m_1 = m.computeTransition(set(s))
+                    assert m_1 != None
                     
                     for n in self.nodes:
                         # Condition??
@@ -111,7 +140,7 @@ class TSA:
                                 
                         r_1.addParent(z)
                     
-                r.setTransition(r_1, str(set(s)))
+                r.addTransition(r_1, set(s))
                     
             L.remove(r)
         
@@ -141,12 +170,14 @@ class TSA:
                 for stateIdx in r.states:
                     rSet.add(DFA.states[stateIdx])
                 F: set[int] = DFA.computeSetTransition(rSet, list(s))
-                m_1 = self.nodes[m.trans[str(set(s))]]
+
+                m_1 = m.computeTransition(set(s))
+                assert m_1 != None
 
                 for r_1 in self.nodes:
                     # Condition???
                     if r_1.states == F and (m_1.index in self.getAncestors(r_1)):
-                        r.setTransition(r_1, str(set(s)))
+                        r.addTransition(r_1, set(s))
                         break
                     
             L.remove(r)
@@ -180,9 +211,9 @@ class TSA:
         
         maxHeight = 0
         
-        for idx in v.trans.values():
+        for t in v.trans:
             currHeight = 0 
-            m = self.nodes[idx]
+            m = t.target
             if m.height < 0:
                 self.computeHeightRec(m)
             
@@ -214,8 +245,8 @@ class TSA:
         self.S.append(v)
         self.inStack[v.index] = True
         
-        for k in v.trans.keys():
-            m = self.nodes[v.trans[k]]
+        for t in v.trans:
+            m = t.target
             if m == v:
                 continue
             
@@ -255,19 +286,24 @@ class TSA:
     def liftTransitions(self) -> None:
         """Remove the transition between layers, lifting them to the appropiate level."""
         for m in self.nodes:
-            for k in m.trans.keys():
-                m_1 = self.nodes[m.trans[k]]
-                assert m_1.parent != None
+            newTransitions: list[tuple[TSANode, set[str]]] = []
+            
+            for t in m.trans:
+                m_1 = t.target
                 
                 if m_1.height != m.height:
+                    assert m_1.parent != None, print("m:", m.states, ", m_1:", m_1.states)
                     anc = m_1.parent
                     
                     while anc.height < m.height:
                         assert anc.parent != None, print(anc.states)
                         anc = anc.parent
 
-                    m.setTransition(anc, k)
-        
+                    newTransitions.append((anc, t.ap))
+
+            for (anc, ap) in newTransitions:
+                m.addTransition(anc, ap)
+                        
     def getDescendants(self, m: TSANode) -> set[int]:
         """Returns the inedxes of all the descendants of a node."""
         
@@ -316,6 +352,18 @@ class TSA:
         
         return res
     
+    def isomorphicAutomaton(self) -> FiniteAutomaton:
+        fa = FiniteAutomaton(len(self.heightClasses[self.height - 1]), self.atomicProps)
+        
+        for m in self.heightClasses[self.height - 1]:
+            stateIdx = list(self.nodes[m].states)[0]
+            for t in self.nodes[m].trans:
+                targetIdx = list(t.target.states)[0]
+                
+                fa.addTransition(fa.states[stateIdx], fa.states[targetIdx], t.ap)
+
+        return fa
+    
     def __str__(self) -> str:
         S = ""
         for m in self.nodes:
@@ -337,8 +385,8 @@ class TSA:
             S += f"\n\t{n.index} [label=\"{n.states}\"]"
             # S += f"\n\t{n.index} [label=\"{n.states}\"]"
             
-            for t in n.trans.keys():
-                S += f"\n\t{n.index} -> {n.trans[t]} [label=\"{t}\"];"
+            for t in n.trans:
+                S += f"\n\t{n.index} -> {t.target.index} [label=\"{t.ap}\"];"
     
         for idx in range(1, len(self.nodes)):
             n = self.nodes[idx]

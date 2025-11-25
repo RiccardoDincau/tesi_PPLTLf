@@ -51,10 +51,15 @@ class Translator:
         
         cascadeDecomposition = CascadeDecomposition(reverseSwitchedDfa)
         
+        cascadeDecomposition.tsa.visualize(True, "TSA", "imgs/trn/")
+        
+        isoAut = cascadeDecomposition.isomorphicAutomaton()
+        isoAut.visualize("TSAisoFA", "imgs/trn/")    
+        
         cascadeDecomposition.visualize("CD_Translator", "imgs/trn/")
         
         isoAut = cascadeDecomposition.isomorphicAutomaton()
-        isoAut.visualize("isoFA", "imgs/trn/")    
+        isoAut.visualize("CDisoFA", "imgs/trn/")    
 
         pltlSwitched = cascadeDecomposition.synthetizeFormula()
         
