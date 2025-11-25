@@ -231,22 +231,84 @@ class FiniteAutomaton:
                     dfa.states[i].addTransition(dfa.states[powerStateIndex[str(targetStateIdx)]], set(s))
 
         if reduce:
-            return dfa.minimize()
+            return dfa.removeUnreachableStates().minimize()
 
         return dfa
     
     def minimize(self) -> "FiniteAutomaton":
-        """Minimizes the automaton"""
-        
-        # Removing unreachable states
-        nfa = self.removeUnreachableStates().reverseTransitions()
-        dfa = nfa.determinize().removeUnreachableStates()
-        nfa1 = dfa.reverseTransitions()
-        
-        return nfa1.determinize().removeUnreachableStates()
+        P: list[set[int]] = [set([s.index for s in self.acceptingStates]), set()]
+        W: list[set[int]] = [set([s.index for s in self.acceptingStates]), set()]
     
+        for s in self.states:
+            if s not in self.acceptingStates:
+                P[1].add(s.index)
+                W[1].add(s.index)
+                
+        while len(W) > 0:
+            A = W.pop()
+            
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
+            
+            for s in alphabet_it:
+                X = set()
+                for state in self.states:
+                    if list(state.computeTransition(set(s)))[0].index in A:
+                        X.add(state.index)
+                        
+                newSets = []
+                removeSet = []
+                for Y in P:
+                    interSet = X.intersection(Y)
+                    diffSet = Y.difference(X)
+                    if len(interSet) > 0 and len(diffSet) > 0:
+                        removeSet.append(Y)
+                        newSets.append(interSet)
+                        newSets.append(diffSet)
+                        
+                for i in range(len(removeSet)):
+                    Y = removeSet[i]
+                    
+                    if Y in P:
+                        P.remove(Y)
+                    
+                    if Y in W:
+                        W.remove(Y)
+                        W.append(newSets[i * 2])
+                        W.append(newSets[i * 2 + 1])
+                    else:
+                        if (len(newSets[i * 2]) < len(newSets[i * 2 + 1])):
+                            W.append(newSets[i * 2])
+                        else:
+                            W.append(newSets[i * 2 + 1])
+                            
+                P.extend(newSets)
+                    
+        minDFA = FiniteAutomaton(len(P), self.atomicProps)
+        
+        for i in range(len(P)):
+            statesSet = P[i]
+            q = list(statesSet)[0]
+            
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
+            for s in alphabet_it:
+                target = list(self.states[q].computeTransition(set(s)))[0]
+                for j in range(len(P)):
+                    if target.index in P[j]:
+                        minDFA.addTransition(minDFA.states[i], minDFA.states[j], set(s))
+                        break
+                
+            for idx in statesSet:
+                if self.states[idx] in self.acceptingStates:
+                    minDFA.acceptingStates.append(minDFA.states[i])
+                    
+                if self.states[idx] == self.initState:
+                    minDFA.initState = minDFA.states[i]              
+                    
+        return minDFA
+
     def removeUnreachableStates(self) -> "FiniteAutomaton":
         """Removes all the dead states in the automaton."""
+        
         reachable: set[int] = {self.initState.index}
         newStates: set[int] = {self.initState.index}
         
@@ -297,6 +359,12 @@ class FiniteAutomaton:
                 S.add(state.index)
         
         return S
+    
+    def recognizeWord(self, state: State, word: list[set[str]]) -> bool:
+        if len(word) == 0:
+            return state in self.acceptingStates
+        
+        return self.recognizeWord(list(state.computeTransition(word[0]))[0], word[1:])
 
     def __str__(self) -> str:
         S: str = f"""Numero di stati: {self.statesNumber}

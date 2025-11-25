@@ -232,7 +232,7 @@ class TSA:
             while (w.tarjanIdx != v.tarjanIdx):
                 w = self.S.pop()
                 self.inStack[w.index] = False
-         
+            
     def balance(self) -> None:
         """Balences the TSA."""
         
