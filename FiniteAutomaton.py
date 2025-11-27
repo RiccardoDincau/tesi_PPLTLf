@@ -136,27 +136,26 @@ class FiniteAutomaton:
         """Returns a FA obtained from reversing all the transitions. 
         The FA generated is non deterministic, but has complete transitions."""
         
-        nfa = FiniteAutomaton(self.statesNumber + 1, self.atomicProps) 
-        
+        nfa = FiniteAutomaton(self.statesNumber + 2, self.atomicProps) 
+
         for state in self.states:
             for t in state.transitions:
                 nfa.states[t.target.index].addTransition(nfa.states[state.index], t.ap)
         
         nfa.acceptingStates = [nfa.states[self.initState.index]]
         
-        nfa.initState = nfa.states[nfa.statesNumber - 1]
+        sinkState = nfa.states[nfa.statesNumber - 1]
+        nfa.initState = nfa.states[nfa.statesNumber - 2]
         for state in self.acceptingStates:
             nfa.initState.addTransition(nfa.states[state.index], set(), True)
         
-        # for state in nfa.states:
-        #     if state == nfa.initState: continue
-            
-        #     alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
-        #     for s in alphabet_it:
-        #         if len(state.computeTransition(set(s))) == 0:
-        #             for q in nfa.initState.computeTransition(set(s)):
-        #                 state.addTransition(q, set(s))
-        
+        for state in nfa.states:
+            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
+
+            for s in alphabet_it:
+                if len(state.computeTransition(set(s))) == 0:
+                    nfa.addTransition(state, sinkState, set(s))
+                    
         if reduce:
             return nfa.removeUnreachableStates()
             
