@@ -33,6 +33,8 @@ class TSANode:
         self.tarjanIdx = -1
         self.height = -1
         
+        self._CAvisited = False
+        
     def addParent(self, newParent: "TSANode"):
         if self.parent != None:
             self.parent.children.remove(self.index)
@@ -48,13 +50,21 @@ class TSANode:
             
         self.trans.append(TSATransition(target, prop_int))
         
-        
     def computeTransition(self, atProp: set[str]) -> "TSANode | None":
         for t in self.trans:
             if t.evaluate(atProp):
                 return t.target
             
         return None
+    
+    def computeWord(self, m: "TSANode", word: list[set[str]]) -> "TSANode":
+        if len(word) == 0:
+            return m
+        
+        next = m.computeTransition(word[0])
+        assert next != None
+        
+        return self.computeWord(next, word[1:])
     
     def __str__(self) -> str:
         S = f"{self.index}) pi: {self.parent.index if self.parent != None else 'None'}, phi: {self.states}, delta: ["
@@ -71,8 +81,10 @@ class TSA:
         
         self.nodes: list[TSANode] = []
         self.height = -1
-        self.heightClasses: list[list[int]] = []
+        self.heightClasses: list[list[TSANode]] = []
         self.atomicProps: set[str] = DFA.atomicProps
+        self.dfaAcceptingstates = DFA.acceptingStates
+        self.dfaInitstate = DFA.initState
         
         self.fromDfa(DFA)
         
@@ -81,6 +93,22 @@ class TSA:
         self.balance()
         
         self.liftTransitions()
+        
+        for node in self.nodes:
+            node.tarjanIdx = -1
+            node.equivClass = -1
+            
+        self.S = []
+        self.tarjanIdx = 0
+        self.inStack = [False] * len(self.nodes)
+        
+        for v in self.nodes:
+            if (v.tarjanIdx < 0):
+                self.tarjanEquiv(v)
+            
+        for node in self.nodes:
+            if node.tarjanIdx < 0:
+                self.tarjanEquiv(node)
         
     def fromDfa(self, DFA: FiniteAutomaton) -> None:
         """Build the corrseponding TSA of the given DFA."""
@@ -200,7 +228,7 @@ class TSA:
             self.heightClasses.append([])
             
         for m in self.nodes:
-            self.heightClasses[m.height].append(m.index)
+            self.heightClasses[m.height].append(m)
             
     def computeHeightRec(self, v: TSANode) -> None:
         """Helper function for computing the height."""
@@ -239,6 +267,7 @@ class TSA:
     def tarjanEquiv(self, v: TSANode) -> None:
         """Uses Tarjan's algorithm to search the SCC. Each SCC represents an equivalence 
         class of the nodes."""
+        
         v.tarjanIdx = self.tarjanIdx
         v.equivClass = self.tarjanIdx
         self.tarjanIdx += 1
@@ -269,8 +298,7 @@ class TSA:
         
         for i in range(self.height):
             M = self.heightClasses[i]
-            for rIdx in M:
-                r = self.nodes[rIdx]
+            for r in M:
                 p = r.parent
                 assert p != None
             
@@ -279,7 +307,7 @@ class TSA:
                     m.addParent(p)
                     m.trans = r.trans.copy()
                     m.height = r.height + 1
-                    self.heightClasses[m.height].append(m.index)
+                    self.heightClasses[m.height].append(m)
                     r.addParent(m)
                     self.nodes.append(m)
                     
@@ -356,13 +384,18 @@ class TSA:
         fa = FiniteAutomaton(len(self.heightClasses[0]), self.atomicProps)
         
         for m in self.heightClasses[0]:
-            stateIdx = list(self.nodes[m].states)[0]
-            for t in self.nodes[m].trans:
+            stateIdx = list(m.states)[0]
+            for t in m.trans:
                 targetIdx = list(t.target.states)[0]
                 
                 fa.addTransition(fa.states[stateIdx], fa.states[targetIdx], t.ap)
 
-        return fa
+        for q in self.dfaAcceptingstates:
+            fa.acceptingStates.append(fa.states[q.index])
+
+        fa.initState = fa.states[self.dfaInitstate.index]
+        # print(fa)
+        return fa.minimize()
     
     def __str__(self) -> str:
         S = ""
@@ -382,7 +415,7 @@ class TSA:
     node [shape = square];"""
 
         for n in self.nodes:
-            S += f"\n\t{n.index} [label=\"{n.states}\"]"
+            S += f"\n\t{n.index} [label=\"{n.states} {n.equivClass}\"]"
             # S += f"\n\t{n.index} [label=\"{n.states}\"]"
             
             for t in n.trans:
@@ -399,7 +432,7 @@ class TSA:
                 if len(heightClass) == 0: continue
                 S += "\n\t{rank = same;"
                 for v in heightClass:
-                    S += f" {v};"
+                    S += f" {v.index};"
                 S += "};"
     
         S += "\n}"

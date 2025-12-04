@@ -230,27 +230,34 @@ class FiniteAutomaton:
                     dfa.states[i].addTransition(dfa.states[powerStateIndex[str(targetStateIdx)]], set(s))
 
         if reduce:
-            return dfa.removeUnreachableStates().minimize()
+            return dfa.minimize()
 
         return dfa
     
     def minimize(self) -> "FiniteAutomaton":
-        P: list[set[int]] = [set([s.index for s in self.acceptingStates]), set()]
-        W: list[set[int]] = [set([s.index for s in self.acceptingStates]), set()]
+        # print("------")
+        # print(self)
+        # self.visualize("reduced1", "imgs/trn/")
+        reduced = self.removeUnreachableStates()
+        # print(reduced)
+        # reduced.visualize("reduced", "imgs/trn/")
+        
+        P: list[set[int]] = [set([s.index for s in reduced.acceptingStates]), set()]
+        W: list[set[int]] = [set([s.index for s in reduced.acceptingStates]), set()]
     
-        for s in self.states:
-            if s not in self.acceptingStates:
+        for s in reduced.states:
+            if s not in reduced.acceptingStates:
                 P[1].add(s.index)
                 W[1].add(s.index)
                 
         while len(W) > 0:
             A = W.pop()
             
-            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
+            alphabet_it = chain.from_iterable(combinations(reduced.atomicProps, r) for r in range(len(reduced.atomicProps) + 1))
             
             for s in alphabet_it:
                 X = set()
-                for state in self.states:
+                for state in reduced.states:
                     if list(state.computeTransition(set(s)))[0].index in A:
                         X.add(state.index)
                         
@@ -282,25 +289,25 @@ class FiniteAutomaton:
                             
                 P.extend(newSets)
                     
-        minDFA = FiniteAutomaton(len(P), self.atomicProps)
+        minDFA = FiniteAutomaton(len(P), reduced.atomicProps)
         
         for i in range(len(P)):
             statesSet = P[i]
             q = list(statesSet)[0]
             
-            alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps) + 1))
+            alphabet_it = chain.from_iterable(combinations(reduced.atomicProps, r) for r in range(len(reduced.atomicProps) + 1))
             for s in alphabet_it:
-                target = list(self.states[q].computeTransition(set(s)))[0]
+                target = list(reduced.states[q].computeTransition(set(s)))[0]
                 for j in range(len(P)):
                     if target.index in P[j]:
                         minDFA.addTransition(minDFA.states[i], minDFA.states[j], set(s))
                         break
                 
             for idx in statesSet:
-                if self.states[idx] in self.acceptingStates:
+                if reduced.states[idx] in reduced.acceptingStates:
                     minDFA.acceptingStates.append(minDFA.states[i])
                     
-                if self.states[idx] == self.initState:
+                if reduced.states[idx] == reduced.initState:
                     minDFA.initState = minDFA.states[i]              
                     
         return minDFA

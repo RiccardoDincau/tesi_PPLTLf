@@ -1,4 +1,4 @@
-from TSA import TSA
+from TSA import TSA, TSANode
 from FiniteAutomaton import FiniteAutomaton, State
 from itertools import combinations, chain
 
@@ -6,65 +6,159 @@ from pylogics.syntax.base import Logic, Not, And, Or
 from pylogics.syntax.pltl import Atomic as PltlAtomic, PropositionalTrue as PltlTrue, PropositionalFalse as PltlFalse
 from pylogics.syntax.pltl import Formula, Before, Since, Once, Historically
 
+class CascadeState:
+    def __init__(self, index: int, tsaNode: TSANode) -> None:
+        self.index = index
+        self.totalIndex = -1
+        self.tsaNode = tsaNode
+        
 class CascadeAutomaton:
     def __init__(self, layer: int, parentCA: "CascadeAutomaton | None", tsa: TSA) -> None:
         """A reset automaton representing a layer of a cascade decomposition"""
         # Theta is the identity function because it is a reset automaton
         
+        self.tsa = tsa
+        self.parentCA = parentCA
         self.layer = layer
-        self.Q: list[int] = []
+        self.Q: list[CascadeState] = []
 
-        self.psiInv: dict[tuple[int, ...], int] = {}  
+        self.psiInv: dict[tuple[int, ...], TSANode] = {}  
         self.atomicProps: set[str] = tsa.atomicProps
         
-        # (currentAutomatonState, parentState, propositionalInterpretation) => currentAutomatonState
-        self.delta: dict[tuple[int, tuple[int, ...], tuple[str, ...]], int] = {}
+        # delta: (currentAutomatonState, parentState, propositionalInterpretation) => currentAutomatonState
+        self.delta: dict[tuple[int, tuple[int, ...], tuple[str, ...]], CascadeState] = {}
         
+        # theta: equivalenceClass => (m => caState)
+        self.theta: dict[int, dict[int, CascadeState]] = {}
+        
+        # thetaInv: caState.index => list[TSA]
+        self.thetaInv: dict[int, list[TSANode]] = {}
+        self.stateSum = parentCA.stateSum if parentCA != None else 0
+            
         if layer == 0:
-            self.Q.append(0)
+            m = tsa.heightClasses[tsa.height][0]
+            self.addState(m)
+            root = self.Q[len(self.Q) - 1]
+            
+            self.theta[m.equivClass] = {}
+            self.theta[m.equivClass][m.index] = root
+            
+            self.thetaInv[root.index] = [m]
             
             # For the fisrt layer (The root) the node is mapped to its self
-            self.psiInv[(0,)] = 0
+            self.psiInv[(root.index,)] = m
             
             alphabet_it = chain.from_iterable(combinations(tsa.atomicProps, r) for r in range(len(tsa.atomicProps)+1))
             
             for s in alphabet_it:
-                coord: tuple[int, tuple[int, ...], tuple[str, ...]] = (0, tuple(), s) 
-                target = tsa.nodes[0].computeTransition(set(s))
-                assert target != None
+                coord: tuple[int, tuple[int, ...], tuple[str, ...]] = (root.index, tuple(), s) 
                 
-                self.delta[coord] = target.index
+                self.delta[coord] = root
+                
         else:
             assert parentCA != None
-            
-            for parent in tsa.heightClasses[tsa.height - (layer - 1)]:
-                self.Q.extend(tsa.nodes[parent].children)
 
-            for p in parentCA.psiInv.keys():
+            for m in tsa.heightClasses[tsa.height - (layer - 1)]:
+                if not m.equivClass in self.theta:
+                    self.theta[m.equivClass] = {}
+                    m._CAvisited = True
+                    
+                    for idx in m.children:
+                        self.addState(tsa.nodes[idx])
+                        self.theta[m.equivClass][idx] = self.Q[len(self.Q) - 1]
+                    
+                    self.assignTheta(m, self.theta[m.equivClass], [])
+                    
+            for q in self.Q:
+                self.thetaInv[q.index] = []
+                
+            for thetaEq in self.theta.values():
+                for key in thetaEq:
+                    q = thetaEq[key]
+                    m = self.tsa.nodes[key]
+                    
+                    self.thetaInv[q.index].append(m)
+                    
+            for p in parentCA.psiInv:
                 for q in self.Q:
-                    # Because it's a reset automaton thetaInv of q is q
-                    config: tuple[int, ...] = p + (q,)
+                    intersectionElement: TSANode | None = None
                     
-                    p_inv = parentCA.psiInv[p]
-                    C = tsa.nodes[p_inv].children
-                    
-                    if q in C:
-                        self.psiInv[config] = q
+                    for m in self.thetaInv[q.index]:
+                        if m.index in parentCA.psiInv[p].children:
+                            intersectionElement = m
+                            print("int:", intersectionElement)
+
+                    if intersectionElement != None:
+                        self.psiInv[p + (q.index, )] = intersectionElement
                         
                         alphabet_it = chain.from_iterable(combinations(tsa.atomicProps, r) for r in range(len(tsa.atomicProps)+1))
                 
                         for s in alphabet_it:
-                            coord: tuple[int, tuple[int, ...], tuple[str, ...]] = (q, p, s)
-                            inv = self.psiInv[config]
+                            m = intersectionElement.computeTransition(set(s))
+                            assert m != None
+                            assert m.parent != None
                             
-                            
-                            
-                            for t in tsa.nodes[inv].trans:
-                                if t.ap == set(s):
-                                    self.delta[coord] = t.target.index
-                                else:
-                                    print("!!!! row 55")  
-                                
+                            self.delta[(q.index, p, s)] = self.theta[m.parent.equivClass][m.index]
+        print("Psi")
+        for k in self.psiInv:
+            print(f"{k}: {self.psiInv[k]}")                 
+        print("Delta:")
+        for key in self.delta:
+            print(f"({key[1]}, {key[0]}), {key[2]} => {self.delta[key].index}")
+    
+        print("ThetaInv:")
+        for key in self.thetaInv:
+            print(f"{self.Q[key].index} =>", end="")
+            
+            for m in self.thetaInv[key]:
+                print(m.states, end="")
+            
+            print()
+            
+        for q in self.Q:
+            q.totalIndex = q.index + self.stateSum
+            
+        self.stateSum += len(self.Q)
+        
+    
+    def assignTheta(self, m: TSANode, theta_i: dict[int, CascadeState], word: list[set[str]]) -> None:
+        for t in m.trans:
+            if not t.target._CAvisited:
+                t.target._CAvisited = True
+                
+                newWord: list[set[str]] = word.copy()
+                newWord.append(t.ap)
+                
+                for c in t.target.children:
+                    r = self.tsa.nodes[c]
+                    
+                    equivalenceWord = self.computeWordTo(t.target, m, [False for _ in range(len(self.tsa.nodes))], [])
+                    assert equivalenceWord != None
+                    
+                    representative = r.computeWord(r, equivalenceWord)
+                    
+                    theta_i[c] = theta_i[representative.index]
+                
+                self.assignTheta(t.target, theta_i, newWord)
+    
+    def computeWordTo(self, start: TSANode, end: TSANode, visited: list[bool], word: list[set[str]]) -> list[set[str]] | None:
+        if start == end:
+            return word
+        
+        visited[start.index] = True
+        
+        for t in start.trans:
+            if not visited[t.target.index]:
+                newWord = word.copy()
+                newWord.append(t.ap)
+                res = self.computeWordTo(t.target, end, visited, newWord)
+                
+                if res != None:
+                    return res       
+    
+    def addState(self, tsaNode: TSANode) -> None:
+        self.Q.append(CascadeState(len(self.Q), tsaNode))           
+                     
     def computeStateIns(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
         ins: list[tuple[tuple[int, ...], set[str]]] = [] 
         for k in self.delta.keys():
@@ -91,14 +185,10 @@ class CascadeAutomaton:
         
         return S     
 
-    def configToStr(self, config: tuple[int, ...]) -> str:
-        S = ""
-        for l in list(config):
-            if len(S) > 0:
-                S += ","
-            S += chr(ord("A") + l)
-
-        return S
+    def configToStr(self, config: tuple[int, ...], layerCa: "CascadeAutomaton | None") -> str:
+        if layerCa == None: return ""
+        else:
+            return self.configToStr(config[:-1], layerCa.parentCA) + "," + chr(ord("A") + layerCa.Q[config[len(config) - 1]].totalIndex)
                                 
     def toDot(self) -> str:
         S: str = f"digraph CA "
@@ -114,18 +204,16 @@ class CascadeAutomaton:
         S += "\n}"
         return S
     
-    def toDotSubgraph(self, tsa: TSA | None = None) -> str:
+    def toDotSubgraph(self) -> str:
         S: str = ""
         S += "{"
         for q in self.Q:
-            letter = chr(ord("A") + q)
-            if tsa != None:
-                S += f"\n\t{q} [label=\"{letter} {tsa.nodes[q].states}\"]"
-            else:
-                S += f"\n\t{q} [label=\"{letter}]"
+            letter = chr(ord("A") + q.totalIndex)
+            
+            S += f"\n\t{q.totalIndex} [label=\"{letter} {q.tsaNode.states}\"]"
             
         for k in self.delta.keys():
-            S += f"\n\t{k[0]} -> {self.delta[k]} [label=\"[{self.configToStr(k[1])}] {self.propIntToStr(set(k[2]))}\"];"
+            S += f"\n\t{self.Q[k[0]].totalIndex} -> {self.delta[k].totalIndex} [label=\"[{self.configToStr(k[1], self.parentCA)}] {self.propIntToStr(set(k[2]))}\"];"
     
         S += "\n}\n"
         return S
@@ -139,26 +227,35 @@ class CascadeAutomaton:
         src.render(imagePath + imageName, format = "svg", view = False)
         
 class CascadeDecomposition:
+    
     def __init__(self, dfa: FiniteAutomaton):
         """Build the cascade decomposition of a counter-free deterministic
         FiniteAutomaton representing a temporal logic formula"""
         
         self.tsa = TSA(dfa)
+        self.tsa.visualize(True, "TSA_in_CD", "imgs/trn/")
         self.dfaStatesNumber = dfa.statesNumber
         self.dfaAcceptingStates = dfa.acceptingStates
         self.dfaInitState = dfa.initState
 
         self.CAs: list[CascadeAutomaton] = [CascadeAutomaton(0, None, self.tsa)]
         for layer in range(1, self.tsa.height + 1):
+            print("layer:", layer)
             newCA = CascadeAutomaton(layer, self.CAs[layer - 1], self.tsa)
             self.CAs.append(newCA)
             
         self.stateToCa: dict[int, CascadeAutomaton] = {}
         for CA in self.CAs:
             for q in CA.Q:
-                self.stateToCa[q] = CA
-                
-        self.phiInv = self.computePhiInv()
+                self.stateToCa[q.index] = CA
+    
+        self.phi: dict[tuple[int, ...], TSANode] = self.computePhi()
+        print("PHI:")
+        for c in self.phi:
+            print(f"{c}: {self.phi[c]}")
+            
+        self.visualizeWithTsa("withTSA", "imgs/trn/")
+        # self.phiInv = self.computePhiInv()
             
     def synthetizeFormula(self) -> Formula:
         res: Formula | None = None
@@ -297,50 +394,50 @@ class CascadeDecomposition:
                 phiInv[q].append(config)
         
         return phiInv
-
-    def isomorphicAutomaton(self) -> FiniteAutomaton:
-        fa = FiniteAutomaton(len(self.phiInv), self.tsa.atomicProps)
-        
-        configToState: dict[tuple[int, ...], int] = {}
-        i = 0
-        for config in self.computeConfigurations(0, [()]):
-            configToState[config] = i
-            i += 1
-            
-        print("len:", fa.statesNumber, ", config:", self.computeConfigurations(0, [()]), ", CTOF:", configToState)
-        print("phiInv:", self.phiInv)
+    
+    def computePhi(self) -> dict[tuple[int, ...], TSANode]:
+        phi: dict[tuple[int, ...], TSANode] = {}
+        configs = self.computeConfigurations(0, [()])
+        print("conf:", configs)
+        for config in configs:
+            if config in self.CAs[len(config) - 1].psiInv:
+                phi[config] = self.CAs[len(config) - 1].psiInv[config]
                 
-        for state in fa.states:
-            alphabet_it = chain.from_iterable(combinations(fa.atomicProps, r) for r in range(len(fa.atomicProps)+1))
-            
-            for s in alphabet_it:
-                for config in self.phiInv[state.index]:
-                    targetConfig = self.computeConfigurationTransition(0, config, (), s)
+        return phi
+    
+    def isomorphicAutomaton(self) -> FiniteAutomaton:
+        fa = FiniteAutomaton(len(self.phi), self.tsa.atomicProps)
+        print("PHI:", self.phi)
+        alphabet_it = chain.from_iterable(combinations(fa.atomicProps, r) for r in range(len(fa.atomicProps)+1))
+        
+        for s in alphabet_it:
+            for config in self.phi:
+                start = list(self.phi[config].states)[0]
+                targetConfig = self.computeConfigurationTransition(0, config, (), s)
+                if targetConfig != None:
+                    target = list(self.phi[targetConfig].states)[0]
+                    
+                    alreadyExists = False
+                    for t in fa.states[start].transitions:
+                        if t.target == fa.states[target] and t.ap == set(s):
+                            alreadyExists = True
+                            break
                         
-                    if targetConfig != None:
-                        targetState = fa.states[list(self.tsa.nodes[self.CAs[len(self.CAs) - 1].psiInv[targetConfig]].states)[0]]
-                        
-                        alreadyExists = False
-                        for t in state.transitions:
-                            if t.target == targetState and t.ap == set(s):
-                                alreadyExists = True
-                                break
-                            
-                        if not alreadyExists:
-                            fa.addTransition(state, targetState, set(s))
+                    if not alreadyExists:
+                        fa.addTransition(fa.states[start],  fa.states[target], set(s))
         
         for accState in self.dfaAcceptingStates:
             fa.acceptingStates.append(fa.states[accState.index])
             
         fa.initState = fa.states[self.dfaInitState.index]
         
-        return fa
+        return fa.minimize()
     
     def computeConfigurations(self, layer: int, config: list[tuple[int, ...]]) -> list[tuple[int, ...]]:
         newConfig = []
         for i in range(len(config)):
             for state in self.CAs[layer].Q:
-                newConfig.append(config[i] + (state, ))
+                newConfig.append(config[i] + (state.index, ))
         
         if layer == len(self.CAs) - 1:
             return newConfig
@@ -348,8 +445,8 @@ class CascadeDecomposition:
             return self.computeConfigurations(layer + 1, newConfig)
         
     def computeConfigurationTransition(self, layer: int, config: tuple[int, ...], prevTarget: tuple[int, ...], s: tuple[str, ...]) -> tuple[int, ...] | None:
-        if (config[layer], prevTarget, s) in self.CAs[layer].delta.keys():
-            target: tuple[int, ...] = prevTarget + (self.CAs[layer].delta[(config[layer], prevTarget, s)], )
+        if (config[layer], prevTarget, s) in self.CAs[layer].delta:
+            target: tuple[int, ...] = prevTarget + (self.CAs[layer].delta[(config[layer], prevTarget, s)].index, )
         else:
             return None
         
@@ -358,7 +455,6 @@ class CascadeDecomposition:
         else:
             return self.computeConfigurationTransition(layer + 1, config, target, s)
 
-    
     def toDot(self) -> str:
         S: str = f"digraph CD "
         S += """{
@@ -370,10 +466,85 @@ class CascadeDecomposition:
         S += "\n\tgraph [nodesep=0.7, rankdir=RL];"
         
         for CA in reversed(self.CAs):
-            S += "\n\t" + CA.toDotSubgraph(self.tsa)
+            S += "\n\t" + CA.toDotSubgraph()
         S += "\n}"
         
         return S
+    
+    def visualizeWithTsa(self, imageName = "Unnamed", imagePath = "img/", format = "svg"):
+        offset = self.CAs[len(self.CAs) - 1].stateSum 
+        offset = offset * offset
+        
+        S: str = "digraph CD "
+        S += """{
+    rankdir = TD;
+    center = true;
+    edge [fontname = Courier];
+    node [height = .3, width = .3];
+    node [shape = square];
+    ranksep = 2;"""
+        S += """\nsubgraph CD{"""
+        S += "rankdir = RL;"
+        for CA in reversed(self.CAs):
+            S += "\n\t" + CA.toDotSubgraph()
+            
+            # S += "\n\t{rank = same;"
+            # for q in CA.Q:
+            #     S += f" {q.totalIndex};"
+            # S += "};"
+            
+            for q in CA.thetaInv:
+                for m in CA.thetaInv[q]:
+                    S += f"\n\t {m.index + offset} -> {CA.Q[q].totalIndex} [color=\"blue\"]"
+                    
+        
+                    
+        S += "\n}"
+        
+        
+        S += "\nsubgraph TSA{"
+        for n in self.tsa.nodes:
+            S += f"\n\t{n.index + offset} [label=\"{n.states} {n.equivClass}\", color=\"green\"]"
+            # S += f"\n\t{n.index + offset} [label=\"{n.states}\", color=\"green\" ]"
+            
+            for t in n.trans:
+                S += f"\n\t{n.index + offset} -> {t.target.index + offset} [label=\"{t.ap}\"];"
+    
+        for idx in range(1, len(self.tsa.nodes)):
+            n = self.tsa.nodes[idx]
+            assert n.parent != None
+            S += f"\n\t{n.parent.index + offset} -> {idx + offset} [dir=none, color=\"red\"]"
+        
+        # for heightClass in self.tsa.heightClasses:
+        #     if len(heightClass) == 0: continue
+        #     S += "\n\t{rank = same;"
+        #     for v in heightClass:
+        #         S += f" {v.index + offset};"
+        #     S += "};"
+            
+            
+        
+        S += "}"
+        
+        for i in range(len(self.CAs)):
+            S += "\n\t{rank = same;"
+            for v in self.tsa.heightClasses[len(self.CAs) - i - 1]:
+                S += f" {v.index + offset};"
+
+            for q in self.CAs[i].Q:
+                S += f" {q.totalIndex};"
+
+            S += "};"
+            
+        S += "}"
+        
+        print("With TSA")
+        print(S)
+        
+        from graphviz import Source
+        
+        src = Source(S)
+        src.render(imagePath + imageName, format = format, view = False)
     
     def visualize(self, imageName = "Unnamed", imagePath = "img/", format = "svg") -> None:
         """Save a SVG image of the graph using graphiz"""

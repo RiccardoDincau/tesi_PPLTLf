@@ -59,13 +59,12 @@ class Translator:
         
         cascadeDecomposition.isomorphicAutomaton().visualize("CDisoFA", "imgs/trn/")    
 
-        pltlSwitched = cascadeDecomposition.synthetizeFormula()
+        # pltlSwitched = cascadeDecomposition.synthetizeFormula()
         
-        ltlF = self.switchPltlToLtl(pltlSwitched)
+        # ltlF = self.switchPltlToLtl(pltlSwitched)
         
-        return ltlF
+        return switched
         
-    
     def switchPltlToLtl(self, phi: PLTLFromula) -> LTLFromula:
         """Apply the switch function to a pltl formula"""
         
@@ -240,7 +239,8 @@ if __name__ == "__main__":
     formula = "a && true"
     formula = "a && Y(c S !a)"
     formula = "a && b"
-    formula = "a && Y(a)"
+    formula = "Y(a)"
+    # formula = "a && Y(a)"     
     
     print("Translating:", formula)
     T = Translator()
