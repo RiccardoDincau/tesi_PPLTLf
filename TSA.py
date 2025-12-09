@@ -1,4 +1,4 @@
-from FiniteAutomaton import FiniteAutomaton
+from FiniteAutomaton import FiniteAutomaton, State
 from itertools import combinations, chain
 
 class TSATransition:
@@ -50,12 +50,16 @@ class TSANode:
             
         self.trans.append(TSATransition(target, prop_int))
         
-    def computeTransition(self, atProp: set[str]) -> "TSANode | None":
+    def computeTransition(self, atProp: set[str]) -> "TSANode":
+        res = None
         for t in self.trans:
             if t.evaluate(atProp):
-                return t.target
+                res = t.target
+                break
             
-        return None
+        assert res != None
+        
+        return res
     
     def computeWord(self, m: "TSANode", word: list[set[str]]) -> "TSANode":
         if len(word) == 0:
@@ -67,7 +71,7 @@ class TSANode:
         return self.computeWord(next, word[1:])
     
     def __str__(self) -> str:
-        S = f"{self.index}) pi: {self.parent.index if self.parent != None else 'None'}, phi: {self.states}, delta: ["
+        S = f"{self.index}) pi: {self.parent.index if self.parent != None else 'None'}, phi: {self.states}, h: {self.height}, delta: ["
         for t in self.trans:
             S += str(t)            
         
@@ -92,6 +96,16 @@ class TSA:
 
         self.balance()
         
+        newHeights: list[list[TSANode]] = []
+        for i in range(self.height):
+            oldHeight = self.height - i - 1
+            newHeights.append(self.heightClasses[oldHeight])
+            
+            for m in newHeights[i]:
+                m.height = i
+                
+        self.heightClasses = newHeights
+        
         self.liftTransitions()
         
         for node in self.nodes:
@@ -109,106 +123,117 @@ class TSA:
         for node in self.nodes:
             if node.tarjanIdx < 0:
                 self.tarjanEquiv(node)
-        
+                
     def fromDfa(self, DFA: FiniteAutomaton) -> None:
         """Build the corrseponding TSA of the given DFA."""
         
-        root = TSANode(0, set(range(DFA.statesNumber)))
+        root = self.addNewNode(set(range(DFA.statesNumber)))
         
         L: list[TSANode] = [root]
-        self.nodes.append(root)
         
         while len(L) > 0:
             alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
-            r = L[0]
+            m = L[0]
             
             for s in alphabet_it: 
                 rSet = set()
-                for stateIdx in r.states:
+                for stateIdx in m.states:
                     rSet.add(DFA.states[stateIdx])
+                    
                 F: set[int] = DFA.computeSetTransition(rSet, list(s))
                 
-                r_1: TSANode = TSANode(-1, set())
+                m_1: TSANode | None = None
                 
-                # Check the case r is the root
-                if r.parent == None:
-                    r_1 = TSANode(len(self.nodes), F)
-    
-                    L.append(r_1)
-                    self.nodes.append(r_1)
-                    
-                    r_1.addParent(r)
+                if m.parent == None:
+                    for node in self.nodes:
+                        if node.states == F:
+                            m_1 = node
+                            break    
+                
+                    if m_1 == None:
+                        m_1 = self.addNewNode(F)
+                        m_1.addParent(m)
+                        
+                        L.append(m_1)
                 else:
-                    m = r.parent
-                    m_1 = m.computeTransition(set(s))
-                    assert m_1 != None
+                    parentTarget = m.parent.computeTransition(set(s))
                     
-                    for n in self.nodes:
-                        # Condition??
-                        if n.states == F and (m_1.index in self.getAncestors(n)): # Complexity ???
-                            r_1 = n
-                            break # Use the first fitting state found
-                    
-                    # r_1 not found. The root cannot be choosen as r_1 in the previous loop (?)
-                    if r_1.parent == None:
-                        z = self.minimalDescendentStateSuperset(m_1, F)
-                        r_1 = TSANode(len(self.nodes), F)
-
-                        L.append(r_1)
-                        self.nodes.append(r_1)
+                    for node in self.nodes:
+                        ancestors = self.getAncestors(node)
                         
-                        newChildren: list[TSANode]= []
-                        for idx in z.children:
-                            child = self.nodes[idx]
-                            if F.issubset(child.states):
-                                newChildren.append(child)
+                        if node.states == F and parentTarget in ancestors:
+                            m_1 = node
+                            break  
                         
-                        for child in newChildren:
-                            child.addParent(r_1)    
-                                
-                        r_1.addParent(z)
+                    if m_1 == None:
+                        m_1 = self.addNewNode(F)
+                        
+                        L.append(m_1)
+                        
+                        r = self.deepestDescendentContainingSubset(m.parent.computeTransition(set(s)), F)
+                        
+                        for idx in r.children.copy():
+                            r_1 = self.nodes[idx]
+                            if r_1.states.issubset(F):
+                                r_1.addParent(m_1)
+                        
+                        m_1.addParent(r)
+                        
+                m.addTransition(m_1, set(s))
                     
-                r.addTransition(r_1, set(s))
-                    
-            L.remove(r)
+            L.remove(m)
+            
+        self.addSingleton(root, DFA)
         
-        for m in self.nodes:
-            if len(m.states) == 1: continue
-            
-            childrenStates: set[int] = set()
-            for child in m.children:
-                childrenStates = childrenStates.union(self.nodes[child].states)
+    def addSingleton(self, r: TSANode, dfa: FiniteAutomaton):
+        if len(r.states) == 1:
+            return
+        
+        childrenStates: set[int] = set()
+        for child in r.children:
+            childrenStates = childrenStates.union(self.nodes[child].states)
 
-            for q in m.states.difference(childrenStates):
-                r = TSANode(len(self.nodes), {q})
-                r.addParent(m)
-                
-                self.nodes.append(r)
-                L.append(r)
-                
-        while len(L) > 0:
+        for q in r.states.difference(childrenStates):
+            m: TSANode = self.addNewNode({q})
+            
+            m.addParent(r)
+            assert m.parent != None
+            
             alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
-            
-            r = L[0]
-            m = r.parent
-            assert m != None
-            
-            for s in alphabet_it:
+            for s in alphabet_it: 
                 rSet = set()
-                for stateIdx in r.states:
-                    rSet.add(DFA.states[stateIdx])
-                F: set[int] = DFA.computeSetTransition(rSet, list(s))
-
-                m_1 = m.computeTransition(set(s))
-                assert m_1 != None
-
-                for r_1 in self.nodes:
-                    # Condition???
-                    if r_1.states == F and (m_1.index in self.getAncestors(r_1)):
-                        r.addTransition(r_1, set(s))
-                        break
+                for stateIdx in m.states:
+                    rSet.add(dfa.states[stateIdx])
                     
-            L.remove(r)
+                F: set[int] = dfa.computeSetTransition(rSet, list(s))
+                
+                m_1: TSANode | None = None
+                
+                parentTarget = m.parent.computeTransition(set(s))
+                    
+                for node in self.nodes:
+                    ancestors = self.getAncestors(node)
+                    
+                    if node.states == F and parentTarget in ancestors:
+                        m_1 = node
+                        break  
+                        
+                if m_1 == None:
+                    m_1 = self.addNewNode(F)
+                    
+                    n = self.deepestDescendentContainingSubset(m.parent.computeTransition(set(s)), F)
+                    
+                    for idx in n.children.copy():
+                        r_1 = self.nodes[idx]
+                        if r_1.states.issubset(F):
+                            r_1.addParent(m_1)
+                    
+                    m_1.addParent(n)
+                        
+                m.addTransition(m_1, set(s))
+                    
+        for childIdx in r.children:
+            self.addSingleton(self.nodes[childIdx], dfa)
 
     def computeHeight(self) -> None:
         """Computes the height for each node in the TSA."""
@@ -220,15 +245,59 @@ class TSA:
         for v in self.nodes:
             if (v.tarjanIdx < 0):
                 self.tarjanEquiv(v) 
-
-        self.computeHeightRec(self.nodes[0])
-        self.height = self.nodes[0].height
+ 
+        visited: list[bool] = [False for _ in range(len(self.nodes))]
         
-        for i in range(self.height + 1):
+        self.heightClasses.append([])
+        for m in self.nodes:
+            if len(m.states) == 1:
+                self.heightClasses[0].append(m)
+                visited[m.index] = True
+                m.height = 0
+                
+        self.height = 1
+        
+        while not (len(self.heightClasses[self.height - 1]) == 1 and self.heightClasses[self.height - 1][0] == self.nodes[0]):
             self.heightClasses.append([])
             
-        for m in self.nodes:
-            self.heightClasses[m.height].append(m)
+            for n in self.nodes:
+                if not visited[n.index]:
+                    self.heightClasses[self.height].append(n)
+                    
+            updated = True
+            while updated:
+                updated = False
+                
+                for m in self.heightClasses[self.height]:
+                    for m_1 in self.nodes:
+                        canReach = False
+
+                        for t in m.trans:
+                            if t.target == m_1:
+                                canReach = True
+                                break
+                            
+                        if not visited[m_1.index] and m.equivClass != m_1.equivClass and (m_1.parent == m or canReach):
+                            self.heightClasses[self.height].remove(m)
+                            updated = True
+                            break
+                        
+                    if updated: break
+        
+            for m in self.heightClasses[self.height]:
+                visited[m.index] = True
+                m.height = self.height
+
+            self.height += 1
+                        
+        # self.computeHeightRec(self.nodes[0])
+        # self.height = self.nodes[0].height
+        
+        # for i in range(self.height + 1):
+        #     self.heightClasses.append([])
+            
+        # for m in self.nodes:
+        #     self.heightClasses[m.height].append(m)
             
     def computeHeightRec(self, v: TSANode) -> None:
         """Helper function for computing the height."""
@@ -296,42 +365,46 @@ class TSA:
     def balance(self) -> None:
         """Balences the TSA."""
         
-        for i in range(self.height):
+        for i in range(self.height - 1):
             M = self.heightClasses[i]
+            
             for r in M:
                 p = r.parent
                 assert p != None
             
                 if p.height != r.height + 1:
-                    m = TSANode(len(self.nodes), r.states)
+                    m = self.addNewNode(r.states)
                     m.addParent(p)
                     m.trans = r.trans.copy()
                     m.height = r.height + 1
                     self.heightClasses[m.height].append(m)
                     r.addParent(m)
-                    self.nodes.append(m)
                     
     def liftTransitions(self) -> None:
         """Remove the transition between layers, lifting them to the appropiate level."""
-        for m in self.nodes:
-            newTransitions: list[tuple[TSANode, set[str]]] = []
+        
+        for height in range(self.height):
+            M = self.heightClasses[height]
             
-            for t in m.trans:
-                m_1 = t.target
+            for m in M:
+                newTransitions: list[tuple[TSANode, set[str]]] = []
                 
-                if m_1.height != m.height:
-                    assert m_1.parent != None, print("m:", m.states, ", m_1:", m_1.states)
-                    anc = m_1.parent
+                for t in m.trans:
+                    m_1 = t.target
                     
-                    while anc.height < m.height:
-                        assert anc.parent != None, print(anc.states)
-                        anc = anc.parent
-
-                    newTransitions.append((anc, t.ap))
-
-            for (anc, ap) in newTransitions:
-                m.addTransition(anc, ap)
+                    if m_1.height != m.height:
+                        assert m_1.parent != None, print("m:", m.states, ", m_1:", m_1.states)
+                        anc = m_1.parent
                         
+                        while anc.height > m.height:
+                            assert anc.parent != None, print(anc.states)
+                            anc = anc.parent
+
+                        newTransitions.append((anc, t.ap))
+
+                for (anc, ap) in newTransitions:
+                    m.addTransition(anc, ap)
+                    
     def getDescendants(self, m: TSANode) -> set[int]:
         """Returns the inedxes of all the descendants of a node."""
         
@@ -347,24 +420,41 @@ class TSA:
                 
         return desc
     
-    def getAncestors(self, m: TSANode) -> set[int]:
+    def getAncestors(self, m: TSANode) -> set[TSANode]:
         """Returns the inedxes of all the ancestors of a node."""
         
-        desc: set[int] = set()
-        S: list[int] = [m.index]
+        anc: set[TSANode] = set()
+        S: list[TSANode] = [m]
         
         while len(S) > 0:
             n = S.pop()
             
-            if not (n in desc):
-                desc.add(n)
-                p = self.nodes[n].parent
-                if p != None:
-                    assert p != None
-                    S.append(p.index)
+            if not (n in anc):
+                anc.add(n)
+                parent = n.parent
                 
-        return desc
- 
+                if parent != None:
+                    S.append(parent)
+                
+        return anc
+    
+    def deepestDescendentContainingSubset(self, m: TSANode, F: set[int]) -> TSANode:
+        deepest = (m, 0)
+        
+        S = [(m, 0)]
+        while len(S) > 0:
+            n = S.pop()
+            
+            for child in n[0].children:
+                newDesc = (self.nodes[child], n[1] + 1)
+                if (newDesc[0].states.issubset(F)):
+                    S.append(newDesc)
+                    
+                    if newDesc[1] > deepest[1]:
+                        deepest = newDesc
+                    
+        return deepest[0]
+        
     def minimalDescendentStateSuperset(self, ancestor: TSANode, subset: set[int]) -> TSANode:
         """Find the minimal node, descendent of 'ancestor', with the smallest states 
         set associated such that it contains 'subset'. (Complexity ???)"""
@@ -381,9 +471,8 @@ class TSA:
         return res
     
     def isomorphicAutomaton(self) -> FiniteAutomaton:
-        fa = FiniteAutomaton(len(self.heightClasses[0]), self.atomicProps)
-        
-        for m in self.heightClasses[0]:
+        fa = FiniteAutomaton(len(self.heightClasses[self.height - 1]), self.atomicProps)
+        for m in self.heightClasses[self.height - 1]:
             stateIdx = list(m.states)[0]
             for t in m.trans:
                 targetIdx = list(t.target.states)[0]
@@ -396,6 +485,13 @@ class TSA:
         fa.initState = fa.states[self.dfaInitstate.index]
         # print(fa)
         return fa.minimize()
+
+    def addNewNode(self, states: set[int]) -> TSANode:
+        """Creates a new node, appends it to the list of nodes and return the newly created state."""
+        newNode = TSANode(len(self.nodes), states)
+        self.nodes.append(newNode)
+        
+        return newNode
     
     def __str__(self) -> str:
         S = ""
@@ -415,7 +511,7 @@ class TSA:
     node [shape = square];"""
 
         for n in self.nodes:
-            S += f"\n\t{n.index} [label=\"{n.states} {n.equivClass}\"]"
+            S += f"\n\t{n.index} [label=\"{n.states} {n.equivClass} {n.height}\"]"
             # S += f"\n\t{n.index} [label=\"{n.states}\"]"
             
             for t in n.trans:

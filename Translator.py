@@ -236,11 +236,11 @@ class Translator:
     
 if __name__ == "__main__":
     # formula = "a S Y(b) && !Y(b) || Y(!a S b)"
-    formula = "a && true"
-    formula = "a && Y(c S !a)"
-    formula = "a && b"
-    formula = "Y(a)"
-    # formula = "a && Y(a)"     
+    # formula = "a && true"
+    # formula = "a && Y(c S !a)"
+    # formula = "a && b"
+    # formula = "Y(a)"
+    formula = "a && Y(a)" 
     
     print("Translating:", formula)
     T = Translator()

@@ -36,7 +36,7 @@ class CascadeAutomaton:
         self.stateSum = parentCA.stateSum if parentCA != None else 0
             
         if layer == 0:
-            m = tsa.heightClasses[tsa.height][0]
+            m = tsa.heightClasses[0][0]
             self.addState(m)
             root = self.Q[len(self.Q) - 1]
             
@@ -58,7 +58,7 @@ class CascadeAutomaton:
         else:
             assert parentCA != None
 
-            for m in tsa.heightClasses[tsa.height - (layer - 1)]:
+            for m in tsa.heightClasses[layer - 1]:
                 if not m.equivClass in self.theta:
                     self.theta[m.equivClass] = {}
                     m._CAvisited = True
@@ -68,7 +68,7 @@ class CascadeAutomaton:
                         self.theta[m.equivClass][idx] = self.Q[len(self.Q) - 1]
                     
                     self.assignTheta(m, self.theta[m.equivClass], [])
-                    
+                
             for q in self.Q:
                 self.thetaInv[q.index] = []
                 
@@ -78,7 +78,7 @@ class CascadeAutomaton:
                     m = self.tsa.nodes[key]
                     
                     self.thetaInv[q.index].append(m)
-                    
+
             for p in parentCA.psiInv:
                 for q in self.Q:
                     intersectionElement: TSANode | None = None
@@ -86,7 +86,7 @@ class CascadeAutomaton:
                     for m in self.thetaInv[q.index]:
                         if m.index in parentCA.psiInv[p].children:
                             intersectionElement = m
-                            print("int:", intersectionElement)
+                            # print("int:", intersectionElement)
 
                     if intersectionElement != None:
                         self.psiInv[p + (q.index, )] = intersectionElement
@@ -99,21 +99,21 @@ class CascadeAutomaton:
                             assert m.parent != None
                             
                             self.delta[(q.index, p, s)] = self.theta[m.parent.equivClass][m.index]
-        print("Psi")
-        for k in self.psiInv:
-            print(f"{k}: {self.psiInv[k]}")                 
-        print("Delta:")
-        for key in self.delta:
-            print(f"({key[1]}, {key[0]}), {key[2]} => {self.delta[key].index}")
+        # print("Psi")
+        # for k in self.psiInv:
+        #     print(f"{k}: {self.psiInv[k]}")                 
+        # print("Delta:")
+        # for key in self.delta:
+        #     print(f"({key[1]}, {key[0]}), {key[2]} => {self.delta[key].index}")
     
-        print("ThetaInv:")
-        for key in self.thetaInv:
-            print(f"{self.Q[key].index} =>", end="")
+        # print("ThetaInv:")
+        # for key in self.thetaInv:
+        #     print(f"{self.Q[key].index} =>", end="")
             
-            for m in self.thetaInv[key]:
-                print(m.states, end="")
+        #     for m in self.thetaInv[key]:
+        #         print(m.states, end="")
             
-            print()
+        #     print()
             
         for q in self.Q:
             q.totalIndex = q.index + self.stateSum
@@ -147,15 +147,17 @@ class CascadeAutomaton:
         
         visited[start.index] = True
         
+        # print(start.states, start.trans)
         for t in start.trans:
+            newWord = word.copy()
+            newWord.append(t.ap)
+            
             if not visited[t.target.index]:
-                newWord = word.copy()
-                newWord.append(t.ap)
                 res = self.computeWordTo(t.target, end, visited, newWord)
                 
                 if res != None:
                     return res       
-    
+
     def addState(self, tsaNode: TSANode) -> None:
         self.Q.append(CascadeState(len(self.Q), tsaNode))           
                      
@@ -239,7 +241,7 @@ class CascadeDecomposition:
         self.dfaInitState = dfa.initState
 
         self.CAs: list[CascadeAutomaton] = [CascadeAutomaton(0, None, self.tsa)]
-        for layer in range(1, self.tsa.height + 1):
+        for layer in range(1, self.tsa.height):
             print("layer:", layer)
             newCA = CascadeAutomaton(layer, self.CAs[layer - 1], self.tsa)
             self.CAs.append(newCA)
@@ -431,6 +433,7 @@ class CascadeDecomposition:
             
         fa.initState = fa.states[self.dfaInitState.index]
         
+        return fa
         return fa.minimize()
     
     def computeConfigurations(self, layer: int, config: list[tuple[int, ...]]) -> list[tuple[int, ...]]:
@@ -521,14 +524,12 @@ class CascadeDecomposition:
         #     for v in heightClass:
         #         S += f" {v.index + offset};"
         #     S += "};"
-            
-            
         
         S += "}"
         
         for i in range(len(self.CAs)):
             S += "\n\t{rank = same;"
-            for v in self.tsa.heightClasses[len(self.CAs) - i - 1]:
+            for v in self.tsa.heightClasses[i]:
                 S += f" {v.index + offset};"
 
             for q in self.CAs[i].Q:
@@ -537,9 +538,6 @@ class CascadeDecomposition:
             S += "};"
             
         S += "}"
-        
-        print("With TSA")
-        print(S)
         
         from graphviz import Source
         
