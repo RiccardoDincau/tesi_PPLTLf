@@ -107,22 +107,6 @@ class TSA:
         self.heightClasses = newHeights
         
         self.liftTransitions()
-        
-        for node in self.nodes:
-            node.tarjanIdx = -1
-            node.equivClass = -1
-            
-        self.S = []
-        self.tarjanIdx = 0
-        self.inStack = [False] * len(self.nodes)
-        
-        for v in self.nodes:
-            if (v.tarjanIdx < 0):
-                self.tarjanEquiv(v)
-            
-        for node in self.nodes:
-            if node.tarjanIdx < 0:
-                self.tarjanEquiv(node)
                 
     def fromDfa(self, DFA: FiniteAutomaton) -> None:
         """Build the corrseponding TSA of the given DFA."""
@@ -195,7 +179,6 @@ class TSA:
 
         for q in r.states.difference(childrenStates):
             m: TSANode = self.addNewNode({q})
-            
             m.addParent(r)
             assert m.parent != None
             
@@ -363,7 +346,7 @@ class TSA:
                 self.inStack[w.index] = False
             
     def balance(self) -> None:
-        """Balences the TSA."""
+        """Balances the TSA."""
         
         for i in range(self.height - 1):
             M = self.heightClasses[i]
@@ -377,6 +360,7 @@ class TSA:
                     m.addParent(p)
                     m.trans = r.trans.copy()
                     m.height = r.height + 1
+                    m.equivClass = r.equivClass
                     self.heightClasses[m.height].append(m)
                     r.addParent(m)
                     
