@@ -64,10 +64,11 @@ class CascadeAutomaton:
                     m._CAvisited = True
                     
                     for idx in m.children:
+                        # print("parent:", m.states, idx)
                         self.addState(tsa.nodes[idx])
                         self.theta[m.equivClass][idx] = self.Q[len(self.Q) - 1]
                     
-                    self.assignTheta(m, self.theta[m.equivClass], [])
+                    self.assignTheta(m, m, self.theta[m.equivClass], [])
                 
             for q in self.Q:
                 self.thetaInv[q.index] = []
@@ -98,7 +99,10 @@ class CascadeAutomaton:
                             assert m != None
                             assert m.parent != None
                             
+                            # print((q.index, p, s), m.parent.equivClass, m.index)
+                            
                             self.delta[(q.index, p, s)] = self.theta[m.parent.equivClass][m.index]
+                            
         # print("Psi")
         # for k in self.psiInv:
         #     print(f"{k}: {self.psiInv[k]}")                 
@@ -121,25 +125,31 @@ class CascadeAutomaton:
         self.stateSum += len(self.Q)
         
     
-    def assignTheta(self, m: TSANode, theta_i: dict[int, CascadeState], word: list[set[str]]) -> None:
+    def assignTheta(self, m: TSANode, reprParent: TSANode, theta_i: dict[int, CascadeState], word: list[set[str]]) -> None:
         for t in m.trans:
-            if not t.target._CAvisited:
+            if not t.target._CAvisited and t.target.equivClass == reprParent.equivClass:
                 t.target._CAvisited = True
                 
                 newWord: list[set[str]] = word.copy()
                 newWord.append(t.ap)
                 
+                # print("Parent layer:", t.target.states)
+                # print("Children:")
+                
                 for c in t.target.children:
                     r = self.tsa.nodes[c]
+                    # print(r.states, "|", r.index, end=" ")
                     
-                    equivalenceWord = self.computeWordTo(t.target, m, [False for _ in range(len(self.tsa.nodes))], [])
+                    equivalenceWord = self.computeWordTo(t.target, reprParent, [False for _ in range(len(self.tsa.nodes))], [])
                     assert equivalenceWord != None
                     
                     representative = r.computeWord(r, equivalenceWord)
                     
                     theta_i[c] = theta_i[representative.index]
+                    # print("word:", equivalenceWord, ", theta_i:", theta_i[c].tsaNode.states, theta_i[c].tsaNode.index, end=" ")
+                # print()
                 
-                self.assignTheta(t.target, theta_i, newWord)
+                self.assignTheta(t.target, reprParent, theta_i, newWord)
     
     def computeWordTo(self, start: TSANode, end: TSANode, visited: list[bool], word: list[set[str]]) -> list[set[str]] | None:
         if start == end:
@@ -236,13 +246,15 @@ class CascadeDecomposition:
         
         self.tsa = TSA(dfa)
         self.tsa.visualize(True, "TSA_in_CD", "imgs/trn/")
+        print(self.tsa)
+        
         self.dfaStatesNumber = dfa.statesNumber
         self.dfaAcceptingStates = dfa.acceptingStates
         self.dfaInitState = dfa.initState
 
         self.CAs: list[CascadeAutomaton] = [CascadeAutomaton(0, None, self.tsa)]
         for layer in range(1, self.tsa.height):
-            print("layer:", layer)
+            # print("layer:", layer)
             newCA = CascadeAutomaton(layer, self.CAs[layer - 1], self.tsa)
             self.CAs.append(newCA)
             
@@ -252,9 +264,9 @@ class CascadeDecomposition:
                 self.stateToCa[q.index] = CA
     
         self.phi: dict[tuple[int, ...], TSANode] = self.computePhi()
-        print("PHI:")
-        for c in self.phi:
-            print(f"{c}: {self.phi[c]}")
+        # print("PHI:")
+        # for c in self.phi:
+        #     print(f"{c}: {self.phi[c]}")
             
         self.visualizeWithTsa("withTSA", "imgs/trn/")
         # self.phiInv = self.computePhiInv()
@@ -400,7 +412,7 @@ class CascadeDecomposition:
     def computePhi(self) -> dict[tuple[int, ...], TSANode]:
         phi: dict[tuple[int, ...], TSANode] = {}
         configs = self.computeConfigurations(0, [()])
-        print("conf:", configs)
+        # print("conf:", configs)
         for config in configs:
             if config in self.CAs[len(config) - 1].psiInv:
                 phi[config] = self.CAs[len(config) - 1].psiInv[config]
@@ -409,7 +421,7 @@ class CascadeDecomposition:
     
     def isomorphicAutomaton(self) -> FiniteAutomaton:
         fa = FiniteAutomaton(len(self.phi), self.tsa.atomicProps)
-        print("PHI:", self.phi)
+        # print("PHI:", self.phi)
         alphabet_it = chain.from_iterable(combinations(fa.atomicProps, r) for r in range(len(fa.atomicProps)+1))
         
         for s in alphabet_it:

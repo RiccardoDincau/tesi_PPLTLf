@@ -250,6 +250,10 @@ class FiniteAutomaton:
                 P[1].add(s.index)
                 W[1].add(s.index)
                 
+        if len(P[1]) == 0:
+            P.remove(P[1])
+            W.remove(W[1])
+                
         while len(W) > 0:
             A = W.pop()
             
@@ -293,15 +297,27 @@ class FiniteAutomaton:
         
         for i in range(len(P)):
             statesSet = P[i]
-            q = list(statesSet)[0]
+            # print(statesSet)
             
             alphabet_it = chain.from_iterable(combinations(reduced.atomicProps, r) for r in range(len(reduced.atomicProps) + 1))
             for s in alphabet_it:
-                target = list(reduced.states[q].computeTransition(set(s)))[0]
+                targetSubset = set()
+                for q in statesSet:
+                    for state in reduced.states[q].computeTransition(set(s)):
+                        targetSubset.add(state.index)
+                
                 for j in range(len(P)):
-                    if target.index in P[j]:
+                    if targetSubset.issubset(P[j]) and P[j].issubset(targetSubset):
                         minDFA.addTransition(minDFA.states[i], minDFA.states[j], set(s))
                         break
+                     
+                
+            # for s in alphabet_it:
+            #     target = list(reduced.states[q].computeTransition(set(s)))[0]
+            #     for j in range(len(P)):
+            #         if target.index in P[j]:
+            #             minDFA.addTransition(minDFA.states[i], minDFA.states[j], set(s))
+            #             break
                 
             for idx in statesSet:
                 if reduced.states[idx] in reduced.acceptingStates:

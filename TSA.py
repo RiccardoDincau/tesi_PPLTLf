@@ -57,10 +57,11 @@ class TSANode:
                 res = t.target
                 break
             
-        assert res != None
+        assert res != None 
         
         return res
     
+    # Parameter m might be redundant
     def computeWord(self, m: "TSANode", word: list[set[str]]) -> "TSANode":
         if len(word) == 0:
             return m
