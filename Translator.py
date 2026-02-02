@@ -240,9 +240,9 @@ if __name__ == "__main__":
     # formula = "a && Y(c S !a)"
     # formula = "a && b"
     # formula = "Y(a)"
-    # formula = "(a S b) || Y(a)" # !!!!!
+    formula = "(a S b) || Y(a)" # !!!!!
     # formula = "a && (true S b)" 
-    formula = "true" 
+    # formula = "true || a" 
     # formula = "(a S b)" 
     
     print("Translating:", formula)

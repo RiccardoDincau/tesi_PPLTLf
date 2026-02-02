@@ -239,8 +239,8 @@ class FiniteAutomaton:
         # print(self)
         # self.visualize("reduced1", "imgs/trn/")
         reduced = self.removeUnreachableStates()
-        # print(reduced)
-        # reduced.visualize("reduced", "imgs/trn/")
+        print(reduced)
+        reduced.visualize("reduced", "imgs/trn/")
         
         P: list[set[int]] = [set([s.index for s in reduced.acceptingStates]), set()]
         W: list[set[int]] = [set([s.index for s in reduced.acceptingStates]), set()]
@@ -295,21 +295,29 @@ class FiniteAutomaton:
                     
         minDFA = FiniteAutomaton(len(P), reduced.atomicProps)
         
+        print("P:")
+        for p in P:
+            print(p, end=", ")
+        print()
+        
         for i in range(len(P)):
             statesSet = P[i]
             # print(statesSet)
             
             alphabet_it = chain.from_iterable(combinations(reduced.atomicProps, r) for r in range(len(reduced.atomicProps) + 1))
+            
             for s in alphabet_it:
                 targetSubset = set()
                 for q in statesSet:
                     for state in reduced.states[q].computeTransition(set(s)):
                         targetSubset.add(state.index)
+                print("p: ", statesSet, ", s:", s, ", target:", targetSubset)
                 
-                for j in range(len(P)):
-                    if targetSubset.issubset(P[j]) and P[j].issubset(targetSubset):
-                        minDFA.addTransition(minDFA.states[i], minDFA.states[j], set(s))
-                        break
+                for q in targetSubset:
+                    for j in range(len(P)):
+                        if q in P[j]:
+                            minDFA.addTransition(minDFA.states[i], minDFA.states[j], set(s))
+                            break
                      
                 
             # for s in alphabet_it:
