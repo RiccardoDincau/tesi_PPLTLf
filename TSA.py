@@ -14,7 +14,6 @@ class TSATransition:
     def __str__(self) -> str:
         return f"{self.ap} -> {self.target.index}"   
     
-
 class TSANode:
     """Contains nodes used in TSA. It has a parenthood 
     function, a transition function and a map to
@@ -72,9 +71,9 @@ class TSANode:
         return self.computeWord(next, word[1:])
     
     def __str__(self) -> str:
-        S = f"{self.index}) pi: {self.parent.index if self.parent != None else 'None'}, phi: {self.states}, h: {self.height}, delta: ["
+        S = f"{self.index}|{self.states}) pi: {self.parent.index if self.parent != None else 'None'}, phi: {self.states}, h: {self.height}, delta: ["
         for t in self.trans:
-            S += str(t)            
+            S += str(t) + ", "           
         
         return S + " ]"
         
@@ -178,11 +177,19 @@ class TSA:
         for child in r.children:
             childrenStates = childrenStates.union(self.nodes[child].states)
 
+
+        L: list[TSANode] = []
+        
         for q in r.states.difference(childrenStates):
             m: TSANode = self.addNewNode({q})
             m.addParent(r)
+            L.append(m)
+        
+
+        while len(L) > 0:
+            m = L.pop()
             assert m.parent != None
-            
+                        
             alphabet_it = chain.from_iterable(combinations(self.atomicProps, r) for r in range(len(self.atomicProps)+1))
             for s in alphabet_it: 
                 rSet = set()
@@ -213,6 +220,8 @@ class TSA:
                             r_1.addParent(m_1)
                     
                     m_1.addParent(n)
+                    
+                    L.append(m_1)
                         
                 m.addTransition(m_1, set(s))
                     
@@ -515,7 +524,9 @@ class TSA:
                 for v in heightClass:
                     S += f" {v.index};"
                 S += "};"
-    
+        from datetime import datetime
+        S +=  '\tlabelloc="t"; \n' + '\tlabel ="' + str(datetime.now()) + '";\n'
+        
         S += "\n}"
         return S
     

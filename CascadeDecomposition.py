@@ -482,6 +482,10 @@ class CascadeDecomposition:
         
         for CA in reversed(self.CAs):
             S += "\n\t" + CA.toDotSubgraph()
+            
+        from datetime import datetime
+        S +=  '\tlabelloc="t"; \n' + '\tlabel ="' + str(datetime.now()) + '";\n'
+        
         S += "\n}"
         
         return S
@@ -511,8 +515,6 @@ class CascadeDecomposition:
             for q in CA.thetaInv:
                 for m in CA.thetaInv[q]:
                     S += f"\n\t {m.index + offset} -> {CA.Q[q].totalIndex} [color=\"blue\"]"
-                    
-        
                     
         S += "\n}"
         
@@ -548,6 +550,9 @@ class CascadeDecomposition:
                 S += f" {q.totalIndex};"
 
             S += "};"
+            
+        from datetime import datetime
+        S +=  '\tlabelloc="t"; \n' + '\tlabel ="' + str(datetime.now()) + '";\n'
             
         S += "}"
         

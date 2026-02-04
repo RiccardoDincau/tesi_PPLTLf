@@ -36,6 +36,10 @@ class State:
         self.transitions: list[Transition] = []
         
     def addTransition(self, target: "State", atomicPropositions: set[str], isEps: bool = False) -> None:
+        for t in self.transitions:
+            if t.target == target and t.ap.issubset(atomicPropositions) and atomicPropositions.issubset(t.ap):
+                return
+        
         self.transitions.append(Transition(target, atomicPropositions, isEps))
         
     def computeTransition(self, atomicPropositions: set[str]) -> set["State"]:
@@ -239,8 +243,8 @@ class FiniteAutomaton:
         # print(self)
         # self.visualize("reduced1", "imgs/trn/")
         reduced = self.removeUnreachableStates()
-        print(reduced)
-        reduced.visualize("reduced", "imgs/trn/")
+        # print(reduced)
+        # reduced.visualize("reduced", "imgs/trn/")
         
         P: list[set[int]] = [set([s.index for s in reduced.acceptingStates]), set()]
         W: list[set[int]] = [set([s.index for s in reduced.acceptingStates]), set()]
@@ -295,10 +299,10 @@ class FiniteAutomaton:
                     
         minDFA = FiniteAutomaton(len(P), reduced.atomicProps)
         
-        print("P:")
-        for p in P:
-            print(p, end=", ")
-        print()
+        # print("P:")
+        # for p in P:
+        #     print(p, end=", ")
+        # print()
         
         for i in range(len(P)):
             statesSet = P[i]
@@ -311,7 +315,7 @@ class FiniteAutomaton:
                 for q in statesSet:
                     for state in reduced.states[q].computeTransition(set(s)):
                         targetSubset.add(state.index)
-                print("p: ", statesSet, ", s:", s, ", target:", targetSubset)
+                # print("p: ", statesSet, ", s:", s, ", target:", targetSubset)
                 
                 for q in targetSubset:
                     for j in range(len(P)):
@@ -426,6 +430,9 @@ Stati accettanti: """
         
         for state in self.states:
             S += state.transitionsToDot(self.atomicProps)
+        
+        from datetime import datetime
+        S +=  '\tlabelloc="t"; \n' + '\tlabel ="' + str(datetime.now()) + '";\n'
         
         S += "}"
         return S
