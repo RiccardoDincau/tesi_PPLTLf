@@ -1,5 +1,5 @@
 from TSA import TSA, TSANode
-from FiniteAutomaton import FiniteAutomaton, State
+from FiniteAutomaton import FiniteAutomaton, State, Transition
 from itertools import combinations, chain
 
 from pylogics.syntax.base import Logic, Not, And, Or
@@ -246,7 +246,6 @@ class CascadeDecomposition:
         
         self.tsa = TSA(dfa)
         self.tsa.visualize(True, "TSA_in_CD", "imgs/trn/")
-        print(self.tsa)
         
         self.dfaStatesNumber = dfa.statesNumber
         self.dfaAcceptingStates = dfa.acceptingStates
@@ -269,7 +268,7 @@ class CascadeDecomposition:
         #     print(f"{c}: {self.phi[c]}")
             
         self.visualizeWithTsa("withTSA", "imgs/trn/")
-        # self.phiInv = self.computePhiInv()
+        self.phiInv = self.computePhiInv()
             
     def synthetizeFormula(self) -> Formula:
         res: Formula | None = None
@@ -320,6 +319,9 @@ class CascadeDecomposition:
         
     def CAStateFormula(self, q: int) -> Formula:
         # The first state is always the trivial one-state automaton
+        # if q == 0:
+        #     return PltlTrue()
+        
         CA = self.stateToCa[q]
         
         ins = CA.computeStateIns(q)
@@ -352,6 +354,9 @@ class CascadeDecomposition:
                 outFromula = f
             else:
                 outFromula = Or(outFromula, f)    
+                
+        if q == 0:
+            print(inFromula, outFromula)
         
         if inFromula == None:
             inFromula = PltlFalse()
@@ -404,12 +409,13 @@ class CascadeDecomposition:
         
         lastCa = self.CAs[len(self.CAs) - 1]
         for config in lastCa.psiInv.keys():
-            for q in self.tsa.nodes[lastCa.psiInv[config]].states:
+            for q in lastCa.psiInv[config].states:
                 phiInv[q].append(config)
         
         return phiInv
     
     def computePhi(self) -> dict[tuple[int, ...], TSANode]:
+        #???????
         phi: dict[tuple[int, ...], TSANode] = {}
         configs = self.computeConfigurations(0, [()])
         # print("conf:", configs)
@@ -420,30 +426,37 @@ class CascadeDecomposition:
         return phi
     
     def isomorphicAutomaton(self) -> FiniteAutomaton:
-        fa = FiniteAutomaton(len(self.phi), self.tsa.atomicProps)
-        # print("PHI:", self.phi)
-        alphabet_it = chain.from_iterable(combinations(fa.atomicProps, r) for r in range(len(fa.atomicProps)+1))
+        configs = self.computeConfigurations(0, [()])
+        lastCa = self.CAs[len(self.CAs) - 1]
         
-        for s in alphabet_it:
-            for config in self.phi:
-                start = list(self.phi[config].states)[0]
-                targetConfig = self.computeConfigurationTransition(0, config, (), s)
-                if targetConfig != None:
-                    target = list(self.phi[targetConfig].states)[0]
-                    
-                    alreadyExists = False
-                    for t in fa.states[start].transitions:
-                        if t.target == fa.states[target] and t.ap == set(s):
-                            alreadyExists = True
-                            break
-                        
-                    if not alreadyExists:
-                        fa.addTransition(fa.states[start],  fa.states[target], set(s))
+        for config in configs:
+            if not (config in lastCa.psiInv.keys()):
+                configs.remove(config)
+                
+                
+        print(lastCa.Q)
+        print(lastCa.delta)
+        print(configs)
         
-        for accState in self.dfaAcceptingStates:
-            fa.acceptingStates.append(fa.states[accState.index])
+        fa = FiniteAutomaton(len(configs), self.tsa.atomicProps)
+        
+        phi: dict[tuple[int, ...], State] = {}
+        
+        index = 0
+        for config in configs:
+            phi[config] = fa.states[index]
+            index += 1
+        
+        delta = lastCa.delta
+        
+        for k in delta.keys():
+            startConfig: tuple[int, ...] = k[1] + (k[0], )
             
-        fa.initState = fa.states[self.dfaInitState.index]
+            targetConfig: tuple[int, ...] | None = self.computeConfigurationTransition(len(self.CAs) - 1, startConfig, k[2])
+            print("Start:", startConfig, ", target:", targetConfig)
+
+            if targetConfig != None:
+                fa.addTransition(phi[startConfig], phi[targetConfig], set(k[2]))
         
         return fa
         return fa.minimize()
@@ -459,16 +472,20 @@ class CascadeDecomposition:
         else:
             return self.computeConfigurations(layer + 1, newConfig)
         
-    def computeConfigurationTransition(self, layer: int, config: tuple[int, ...], prevTarget: tuple[int, ...], s: tuple[str, ...]) -> tuple[int, ...] | None:
-        if (config[layer], prevTarget, s) in self.CAs[layer].delta:
-            target: tuple[int, ...] = prevTarget + (self.CAs[layer].delta[(config[layer], prevTarget, s)].index, )
-        else:
-            return None
+    def computeConfigurationTransition(self, layer: int, config: tuple[int, ...], s: tuple[str, ...]) -> tuple[int, ...] | None:
+        assert layer < len(self.CAs)
         
-        if layer == len(self.CAs) - 1:
-            return target
-        else:
-            return self.computeConfigurationTransition(layer + 1, config, target, s)
+        targetConfig: tuple[int, ...] = ()
+        
+        for i in range(layer + 1):
+            layerTargetState: CascadeState | None = self.CAs[i].delta[(config[i], config[:i], s)]
+            
+            if (layerTargetState == None): 
+                return None
+            else:
+                targetConfig += (layerTargetState.index, )
+
+        return targetConfig
 
     def toDot(self) -> str:
         S: str = f"digraph CD "

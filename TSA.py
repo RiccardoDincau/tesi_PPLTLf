@@ -505,7 +505,7 @@ class TSA:
     node [shape = square];"""
 
         for n in self.nodes:
-            S += f"\n\t{n.index} [label=\"{n.states} {n.equivClass} {n.height}\"]"
+            S += f"\n\t{n.index} [label=\"{n.states} {n.equivClass}\"]"
             # S += f"\n\t{n.index} [label=\"{n.states}\"]"
             
             for t in n.trans:
