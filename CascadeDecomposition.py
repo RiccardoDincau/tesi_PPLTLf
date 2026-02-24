@@ -22,6 +22,7 @@ class CascadeAutomaton:
         self.layer = layer
         self.Q: list[CascadeState] = []
 
+        self.psi: dict[int, tuple[int, ...]] = {}
         self.psiInv: dict[tuple[int, ...], TSANode] = {}  
         self.atomicProps: set[str] = tsa.atomicProps
         
@@ -35,7 +36,7 @@ class CascadeAutomaton:
         self.thetaInv: dict[int, list[TSANode]] = {}
         self.stateSum = parentCA.stateSum if parentCA != None else 0
             
-        if layer == 0:
+        if parentCA == None:
             m = tsa.heightClasses[0][0]
             self.addState(m)
             root = self.Q[len(self.Q) - 1]
@@ -46,6 +47,7 @@ class CascadeAutomaton:
             self.thetaInv[root.index] = [m]
             
             # For the fisrt layer (The root) the node is mapped to its self
+            self.psi[m.index] = (root.index, )
             self.psiInv[(root.index,)] = m
             
             alphabet_it = chain.from_iterable(combinations(tsa.atomicProps, r) for r in range(len(tsa.atomicProps)+1))
@@ -56,17 +58,15 @@ class CascadeAutomaton:
                 self.delta[coord] = root
                 
         else:
-            assert parentCA != None
-
             for m in tsa.heightClasses[layer - 1]:
-                if not m.equivClass in self.theta:
+                if not (m.equivClass in self.theta):
                     self.theta[m.equivClass] = {}
                     m._CAvisited = True
                     
                     for idx in m.children:
                         # print("parent:", m.states, idx)
-                        self.addState(tsa.nodes[idx])
-                        self.theta[m.equivClass][idx] = self.Q[len(self.Q) - 1]
+                        newState = self.addState(tsa.nodes[idx])
+                        self.theta[m.equivClass][idx] = newState
                     
                     self.assignTheta(m, m, self.theta[m.equivClass], [])
                 
@@ -80,51 +80,35 @@ class CascadeAutomaton:
                     
                     self.thetaInv[q.index].append(m)
 
-            for p in parentCA.psiInv:
-                for q in self.Q:
-                    intersectionElement: TSANode | None = None
-                    
-                    for m in self.thetaInv[q.index]:
-                        if m.index in parentCA.psiInv[p].children:
-                            intersectionElement = m
-                            # print("int:", intersectionElement)
 
-                    if intersectionElement != None:
-                        self.psiInv[p + (q.index, )] = intersectionElement
-                        
-                        alphabet_it = chain.from_iterable(combinations(tsa.atomicProps, r) for r in range(len(tsa.atomicProps)+1))
+            for m in parentCA.psi.keys():
+                for child in self.tsa.nodes[m].children:
+                    parentNode = self.tsa.nodes[m]
+                    
+                    if (parentNode.equivClass in self.theta) and (child in self.theta[parentNode.equivClass]):
+                        self.psi[child] = parentCA.psi[m] + (self.theta[parentNode.equivClass][child].index, )
                 
-                        for s in alphabet_it:
-                            m = intersectionElement.computeTransition(set(s))
-                            assert m != None
-                            assert m.parent != None
-                            
-                            # print((q.index, p, s), m.parent.equivClass, m.index)
-                            
-                            self.delta[(q.index, p, s)] = self.theta[m.parent.equivClass][m.index]
-                            
-        # print("Psi")
-        # for k in self.psiInv:
-        #     print(f"{k}: {self.psiInv[k]}")                 
-        # print("Delta:")
-        # for key in self.delta:
-        #     print(f"({key[1]}, {key[0]}), {key[2]} => {self.delta[key].index}")
-    
-        # print("ThetaInv:")
-        # for key in self.thetaInv:
-        #     print(f"{self.Q[key].index} =>", end="")
-            
-        #     for m in self.thetaInv[key]:
-        #         print(m.states, end="")
-            
-        #     print()
-            
+            for m in self.psi.keys():
+                config = self.psi[m]
+                self.psiInv[config] = self.tsa.nodes[m]
+
+            alphabet_it = chain.from_iterable(combinations(tsa.atomicProps, r) for r in range(len(tsa.atomicProps)+1))
+
+            for s in alphabet_it:
+                for config in self.psiInv:
+                    targetNode = self.psiInv[config].computeTransition(set(s))
+
+                    assert targetNode.parent != None, print("Target:", targetNode.states, ", layer:" ,layer,  ", config: ", config, ", psi:", self.psiInv)
+                    
+                    targetState = self.theta[targetNode.parent.equivClass][targetNode.index]
+                    
+                    self.delta[(config[-1:][0], config[:-1], s)] = targetState
+
         for q in self.Q:
             q.totalIndex = q.index + self.stateSum
             
         self.stateSum += len(self.Q)
         
-    
     def assignTheta(self, m: TSANode, reprParent: TSANode, theta_i: dict[int, CascadeState], word: list[set[str]]) -> None:
         for t in m.trans:
             if not t.target._CAvisited and t.target.equivClass == reprParent.equivClass:
@@ -168,9 +152,12 @@ class CascadeAutomaton:
                 if res != None:
                     return res       
 
-    def addState(self, tsaNode: TSANode) -> None:
-        self.Q.append(CascadeState(len(self.Q), tsaNode))           
+    def addState(self, tsaNode: TSANode) -> CascadeState:
+        newState = CascadeState(len(self.Q), tsaNode)
+        self.Q.append(newState)           
                      
+        return newState
+    
     def computeStateIns(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
         ins: list[tuple[tuple[int, ...], set[str]]] = [] 
         for k in self.delta.keys():
@@ -426,6 +413,8 @@ class CascadeDecomposition:
         return phi
     
     def isomorphicAutomaton(self) -> FiniteAutomaton:
+        # Starting state and accepting state of FA are not correct
+        
         configs = self.computeConfigurations(0, [()])
         lastCa = self.CAs[len(self.CAs) - 1]
         
@@ -433,11 +422,6 @@ class CascadeDecomposition:
             if not (config in lastCa.psiInv.keys()):
                 configs.remove(config)
                 
-                
-        print(lastCa.Q)
-        print(lastCa.delta)
-        print(configs)
-        
         fa = FiniteAutomaton(len(configs), self.tsa.atomicProps)
         
         phi: dict[tuple[int, ...], State] = {}
@@ -459,7 +443,6 @@ class CascadeDecomposition:
                 fa.addTransition(phi[startConfig], phi[targetConfig], set(k[2]))
         
         return fa
-        return fa.minimize()
     
     def computeConfigurations(self, layer: int, config: list[tuple[int, ...]]) -> list[tuple[int, ...]]:
         newConfig = []
