@@ -429,6 +429,7 @@ Stati accettanti: """
         S += "\n\tinit [shape = plaintext, label = \"\"];\n\tinit -> " + str(self.initState.index) + ";\n"
         
         for state in self.states:
+            S += "\n\t" + str(state.index) + ";"
             S += state.transitionsToDot(self.atomicProps)
         
         from datetime import datetime

@@ -466,19 +466,27 @@ class TSA:
     
     def isomorphicAutomaton(self) -> FiniteAutomaton:
         fa = FiniteAutomaton(len(self.heightClasses[self.height - 1]), self.atomicProps)
+        
+        nodesToStates: dict[int, int] = {}
+        
+        index = 0
         for m in self.heightClasses[self.height - 1]:
-            stateIdx = list(m.states)[0]
+            nodesToStates[m.index] = index
+            index += 1
+            
+        for m in self.heightClasses[self.height - 1]:
+
             for t in m.trans:
-                targetIdx = list(t.target.states)[0]
+                targetIdx = t.target.index
                 
-                fa.addTransition(fa.states[stateIdx], fa.states[targetIdx], t.ap)
+                fa.addTransition(fa.states[nodesToStates[m.index]], fa.states[nodesToStates[targetIdx]], t.ap)
 
         for q in self.dfaAcceptingstates:
             fa.acceptingStates.append(fa.states[q.index])
 
         fa.initState = fa.states[self.dfaInitstate.index]
         # print(fa)
-        return fa.minimize()
+        return fa
 
     def addNewNode(self, states: set[int]) -> TSANode:
         """Creates a new node, appends it to the list of nodes and return the newly created state."""
