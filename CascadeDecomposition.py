@@ -4,7 +4,7 @@ from itertools import combinations, chain
 
 from pylogics.syntax.base import Logic, Not, And, Or
 from pylogics.syntax.pltl import Atomic as PltlAtomic, PropositionalTrue as PltlTrue, PropositionalFalse as PltlFalse
-from pylogics.syntax.pltl import Formula, Before, Since, Once, Historically
+from pylogics.syntax.pltl import Formula as PLTLFormula, Before, Since, Once, Historically
 
 class CascadeState:
     def __init__(self, index: int, tsaNode: TSANode) -> None:
@@ -161,14 +161,14 @@ class CascadeAutomaton:
     def computeStateIns(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
         ins: list[tuple[tuple[int, ...], set[str]]] = [] 
         for k in self.delta.keys():
-            if self.delta[k] == state:
+            if self.delta[k].index == state and k[0] != state and not ( (k[1], set(k[2])) in ins):
                 ins.append((k[1], set(k[2])))
         return ins
     
     def computeStateOuts(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
         outs: list[tuple[tuple[int, ...], set[str]]] = [] 
         for k in self.delta.keys():
-            if k[0] == state:
+            if k[0] == state and self.delta[k].index != state and not ( (k[1], set(k[2])) in outs):
                 outs.append((k[1], set(k[2])))    
         return outs
 
@@ -231,6 +231,8 @@ class CascadeDecomposition:
         """Build the cascade decomposition of a counter-free deterministic
         FiniteAutomaton representing a temporal logic formula"""
         
+        self.dfa = dfa
+        
         self.tsa = TSA(dfa)
         self.tsa.visualize(True, "TSA_in_CD", "imgs/trn/")
         
@@ -247,41 +249,44 @@ class CascadeDecomposition:
         self.stateToCa: dict[int, CascadeAutomaton] = {}
         for CA in self.CAs:
             for q in CA.Q:
-                self.stateToCa[q.index] = CA
+                self.stateToCa[q.totalIndex] = CA
     
-        self.phi: dict[tuple[int, ...], TSANode] = self.computePhi()
-        # print("PHI:")
-        # for c in self.phi:
-        #     print(f"{c}: {self.phi[c]}")
-            
         self.visualizeWithTsa("withTSA", "imgs/trn/")
         self.phiInv = self.computePhiInv()
-            
-    def synthetizeFormula(self) -> Formula:
-        res: Formula | None = None
         
+        self.phi: dict[tuple[int, ...], State] = self.computePhi()
+        
+        # print(self.phiInv)
+            
+    def synthetizeFormula(self) -> PLTLFormula:
+        res: PLTLFormula | None = None
+
         for state in self.dfaAcceptingStates:
-            f: Formula = self.automatonStateFormula(state)
+            f: PLTLFormula = self.automatonStateFormula(state)
             
             if res == None:
                 res = f
             else:
                 res = Or(res, f)
                 
+                
         assert res != None
         
         return res
 
-    def automatonStateFormula(self, s: State) -> Formula:
-        res: Formula | None = None
+    def automatonStateFormula(self, s: State) -> PLTLFormula:
+        res: PLTLFormula | None = None
         
+        # print("Acc config:", self.phiInv[s.index])
         for config in self.phiInv[s.index]:
-            f: Formula = self.configurationFormula(config)
-
+            f: PLTLFormula = self.configurationFormula(config)
+            print(config, "(", s.index, ") -->", str(f))
             if res == None:
                 res = f
             else:
                 res = Or(res, f)
+                
+            # print("New res:", res)
                 
         # print("State:", s.index, ", f:", res)
 
@@ -289,76 +294,80 @@ class CascadeDecomposition:
         
         return res
     
-    def configurationFormula(self, config: tuple[int, ...]) -> Formula:
-        res: Formula | None = None
+    def configurationFormula(self, config: tuple[int, ...]) -> PLTLFormula:
+        res: PLTLFormula | None = None
         
-        for q in list(config):
-            f: Formula = self.CAStateFormula(q)
+        for i in range(len(config)):
+            q = config[i]
+            
+            f: PLTLFormula = self.CAStateFormula(self.CAs[i].Q[q].totalIndex, q)
 
             if res == None:
                 res = f
             else:
                 res = And(res, f)
+                
+                
         
         assert res != None, print("Configuration is empty!")
         
         return res
         
-    def CAStateFormula(self, q: int) -> Formula:
+    def CAStateFormula(self, totalIndex: int, CAindex: int) -> PLTLFormula:
         # The first state is always the trivial one-state automaton
-        # if q == 0:
-        #     return PltlTrue()
+        if totalIndex == 0:
+            return PltlTrue()
         
-        CA = self.stateToCa[q]
+        CA = self.stateToCa[totalIndex]
         
-        ins = CA.computeStateIns(q)
-        outs = CA.computeStateOuts(q)
+        ins = CA.computeStateIns(CAindex)
+        outs = CA.computeStateOuts(CAindex)
         
-        inFromula: Formula | None = None
+        inFromula: PLTLFormula = PltlFalse()
+        
+        if CA.Q[CAindex].tsaNode.states == {self.dfa.initState.index}:
+            inFromula: PLTLFormula = PltlAtomic("eps")
         
         for c in ins:
-            f: Formula
-            if q == 0:
+            f: PLTLFormula
+            if totalIndex == 0:
                 f = self.propIntToFormula(c[1])
             else:
+                # if c[0] == (0, ):
+                #     # ?????????
+                #     f = self.propIntToFormula(c[1])                    
+                # else:
                 f = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
                 
-            if inFromula == None:
-                inFromula = f
-            else:
-                inFromula = Or(inFromula, f)  
-                 
-        outFromula: Formula | None = None
+            inFromula = Or(inFromula, f)  
+            
+        outFromula: PLTLFormula = PltlFalse()
         
         for c in outs:
-            f: Formula
-            if q == 0:
+            f: PLTLFormula
+            if totalIndex == 0:
                 f = self.propIntToFormula(c[1])
             else:
                 f = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
                 
-            if outFromula == None:
-                outFromula = f
-            else:
-                outFromula = Or(outFromula, f)    
+            outFromula = Or(outFromula, f)    
                 
-        if q == 0:
-            print(inFromula, outFromula)
-        
-        if inFromula == None:
-            inFromula = PltlFalse()
-            
-        assert outFromula != None     
-        
         # print("q:", q, ", f:", Since(Not(outFromula), inFromula))
+        
 
+        if inFromula == PltlFalse():
+            print("False")
+            print(inFromula, totalIndex, CAindex)
+            print(ins)
+            print(outs)
+            
         return Since(Not(outFromula), inFromula) 
     
-    def propIntToFormula(self, propInt: set[str]) -> Formula:
-        res: Formula | None = None
+    def propIntToFormula(self, propInt: set[str]) -> PLTLFormula:
+        res: PLTLFormula | None = None
         
         for s in self.tsa.atomicProps:
-            f: Formula
+            f: PLTLFormula
             if s in propInt:
                 f = PltlAtomic(s)
             else:
@@ -370,7 +379,7 @@ class CascadeDecomposition:
                 res = And(res, f)
                         
         assert res != None, print("There is not an atomic proposition!")
-                
+        
         return res
         
     #     name: str = ""
@@ -392,30 +401,41 @@ class CascadeDecomposition:
     #     return PltlAtomic(name)
 
     def computePhiInv(self) -> list[list[tuple[int, ...]]]:
-        phiInv: list[list[tuple[int, ...]]] = [[] for _ in range(self.dfaStatesNumber)]
+        phiInv: list[list[tuple[int, ...]]] = []
         
-        lastCa = self.CAs[len(self.CAs) - 1]
-        for config in lastCa.psiInv.keys():
-            for q in lastCa.psiInv[config].states:
-                phiInv[q].append(config)
+        statesToNodes: list[set[TSANode]] = []
         
+        for _ in range(self.dfaStatesNumber):
+            statesToNodes.append(set())
+            phiInv.append([])
+        
+        for node in self.tsa.nodes:
+            for q in node.states:
+                statesToNodes[q].add(node)
+
+        for q in range(self.dfaStatesNumber):
+            for node in statesToNodes[q]:
+                for CA in self.CAs:
+                    if node.index in CA.psi:
+                        if len(CA.psi[node.index]) == len(self.CAs):
+                            phiInv[q].append(CA.psi[node.index])
+
         return phiInv
     
-    def computePhi(self) -> dict[tuple[int, ...], TSANode]:
-        #???????
-        phi: dict[tuple[int, ...], TSANode] = {}
-        configs = self.computeConfigurations(0, [()])
-        # print("conf:", configs)
-        for config in configs:
-            if config in self.CAs[len(config) - 1].psiInv:
-                phi[config] = self.CAs[len(config) - 1].psiInv[config]
-                
+    def computePhi(self) -> dict[tuple[int, ...], State]:
+        phi: dict[tuple[int, ...], State] = {}
+        
+        for q in range(len(self.phiInv)):
+            for config in self.phiInv[q]:
+                if len(config) == len(self.CAs):
+                    phi[config] = self.dfa.states[q]
+        
         return phi
-    
-    def isomorphicAutomaton(self) -> FiniteAutomaton:
+        
+    def homomorphicAutomaton(self) -> FiniteAutomaton:
         # Starting state and accepting state of FA are not correct
         
-        configs = self.computeConfigurations(0, [()])
+        configs = self.computeLastLayerConfigurations(0, [()])
         lastCa = self.CAs[len(self.CAs) - 1]
         
         for config in configs:
@@ -437,14 +457,35 @@ class CascadeDecomposition:
             startConfig: tuple[int, ...] = k[1] + (k[0], )
             
             targetConfig: tuple[int, ...] | None = self.computeConfigurationTransition(len(self.CAs) - 1, startConfig, k[2])
-            print("Start:", startConfig, ", target:", targetConfig)
+            # print("Start:", startConfig, ", target:", targetConfig)
 
             if targetConfig != None:
                 fa.addTransition(phi[startConfig], phi[targetConfig], set(k[2]))
         
         return fa
     
-    def computeConfigurations(self, layer: int, config: list[tuple[int, ...]]) -> list[tuple[int, ...]]:
+    def homomorphicAutomatonPhi(self) -> FiniteAutomaton:
+        FA = FiniteAutomaton(len(self.phi.keys()), self.dfa.atomicProps)
+        
+        alphabet_it = chain.from_iterable(combinations(self.dfa.atomicProps, r) for r in range(len(self.dfa.atomicProps)+1))
+            
+        for s in alphabet_it:
+            for config in self.phi.keys():
+                targetConfig = self.computeConfigurationTransition(len(config) - 1, config, s)
+                
+                if targetConfig != None:
+                    startState = FA.states[self.phi[config].index]
+                    targetState = FA.states[self.phi[targetConfig].index]
+                    FA.addTransition(startState, targetState, set(s))
+                    
+        for accState in self.dfaAcceptingStates:
+            FA.acceptingStates.append(FA.states[accState.index])
+    
+        FA.initState = FA.states[self.dfaInitState.index]
+    
+        return FA
+    
+    def computeLastLayerConfigurations(self, layer: int, config: list[tuple[int, ...]]) -> list[tuple[int, ...]]:
         newConfig = []
         for i in range(len(config)):
             for state in self.CAs[layer].Q:
@@ -453,7 +494,7 @@ class CascadeDecomposition:
         if layer == len(self.CAs) - 1:
             return newConfig
         else:
-            return self.computeConfigurations(layer + 1, newConfig)
+            return self.computeLastLayerConfigurations(layer + 1, newConfig)
         
     def computeConfigurationTransition(self, layer: int, config: tuple[int, ...], s: tuple[str, ...]) -> tuple[int, ...] | None:
         assert layer < len(self.CAs)

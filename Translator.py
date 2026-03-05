@@ -1,9 +1,10 @@
 from pylogics.syntax.base import Logic, Not, And, Or, FalseFormula, TrueFormula
 from pylogics.syntax.pltl import Atomic as PltlAtomic, PropositionalTrue as PltlTrue, PropositionalFalse as PltlFalse
-from pylogics.syntax.pltl import Before, Since, Once, Historically, Formula as PLTLFromula
+from pylogics.syntax.pltl import Before, Since, Once, Historically, Formula as PLTLFormula
 from pylogics.syntax.ltl import Atomic as LtlAtomic, PropositionalTrue as LtlTrue, PropositionalFalse as LtlFalse
-from pylogics.syntax.ltl import Next, Until, Formula as LTLFromula
+from pylogics.syntax.ltl import Next, Until, Formula as LTLFormula
 from pylogics.parsers.pltl import parse_pltl 
+from pylogics.parsers.ltl import parse_ltl 
 from FiniteAutomaton import FiniteAutomaton
 from CascadeDecomposition import CascadeDecomposition
 
@@ -11,14 +12,40 @@ class Translator:
     def __init__(self) -> None:
         pass
     
-    def pltlToLtl(self, formula: str) -> LTLFromula:
+    def ltlToPltl(self, ltlFormula: str) -> PLTLFormula:
+        dfa = FiniteAutomaton(formulaStr=ltlFormula).removeUnreachableStates()
+        dfa.visualize("ltlToPltlDfa", "imgs/trn/")
+    
+        CD = CascadeDecomposition(dfa)
+        
+        CD.tsa.visualize(True, "TSA", "imgs/trn/")
+        
+        CD.tsa.isomorphicAutomaton().visualize("TSAisoFA", "imgs/trn/")    
+        
+        CD.visualize("CD", "imgs/trn/")
+        
+        CD.homomorphicAutomaton().visualize("CDisoFA", "imgs/trn/")  
+        CD.homomorphicAutomatonPhi().visualize("CDisoFA2", "imgs/trn/")  
+        # print("CD phi:", CD.phi)
+        
+        # for CA in CD.CAs:
+        #     for state in CA.Q:
+        #         print(chr(ord("A") + state.totalIndex), end = "")
+        #         print(CA.computeStateIns(state.index))
+        #         print(CA.computeStateOuts(state.index))
+        #         print(" --> ", self.convertPltlToString(CD.CAStateFormula(state.totalIndex, state.index)))
+        
+        # return PltlTrue()
+        return CD.synthetizeFormula()
+        
+    def pltlToLtl(self, formula: str) -> LTLFormula:
         pltlF = parse_pltl(formula)
         
         switched = self.switchPltlToLtl(pltlF)
         
-        print("Switched:", self.convertToString(switched))
+        print("Switched:", self.convertLtlToString(switched))
         
-        switchedDfa = FiniteAutomaton(formulaStr=self.convertToString(switched))
+        switchedDfa = FiniteAutomaton(formulaStr=self.convertLtlToString(switched))
         switchedDfa.visualize("switchedDfa", "imgs/trn/")
         
         reversedNfa = switchedDfa.reverseTransitions(True)
@@ -57,15 +84,15 @@ class Translator:
         
         cascadeDecomposition.visualize("CD_Translator", "imgs/trn/")
         
-        cascadeDecomposition.isomorphicAutomaton().visualize("CDisoFA", "imgs/trn/")    
+        cascadeDecomposition.homomorphicAutomaton().visualize("CDisoFA", "imgs/trn/")    
 
-        # pltlSwitched = cascadeDecomposition.synthetizeFormula()
+        pltlSwitched = cascadeDecomposition.synthetizeFormula()
         
-        # ltlF = self.switchPltlToLtl(pltlSwitched)
+        ltlF = self.switchPltlToLtl(pltlSwitched)
         
-        return switched
+        return ltlF
         
-    def switchPltlToLtl(self, phi: PLTLFromula) -> LTLFromula:
+    def switchPltlToLtl(self, phi: PLTLFormula) -> LTLFormula:
         """Apply the switch function to a pltl formula"""
         
         if type(phi) == PltlAtomic:
@@ -116,7 +143,7 @@ class Translator:
         # Non reachable 
         return phi          
 
-    def convertToString(self, phi: LTLFromula) -> str:
+    def convertLtlToString(self, phi: LTLFormula) -> str:
         """Transform the formula to a string"""
         
         S = ""
@@ -133,30 +160,96 @@ class Translator:
         
         elif type(phi) == Not:
             assert type(phi) is Not
-            S = f"(!{self.convertToString(phi.argument)})"
+            S = f"(!{self.convertLtlToString(phi.argument)})"
             
         elif type(phi) == And:
             assert type(phi) is And
-            arg1, arg2 = (self.convertToString(phi.operands[0]), self.convertToString(phi.operands[1]))
-            S = f"({arg1} && {arg2})"
+            S = ""
+            for op in phi.operands:
+                if S == "":
+                    S += self.convertLtlToString(op)
+                else:
+                    S += " && " + self.convertLtlToString(op)
+                    
+            S = f"({S})"
 
         elif type(phi) == Or:
             assert type(phi) is Or
-            arg1, arg2 = (self.convertToString(phi.operands[0]), self.convertToString(phi.operands[1]))
-            S = f"({arg1} || {arg2})"
+            S = ""
+            for op in phi.operands:
+                if S == "":
+                    S += self.convertLtlToString(op)
+                else:
+                    S += " || " + self.convertLtlToString(op)
+                    
+            S = f"({S})"
             
         elif type(phi) == Next:
             assert type(phi) is Next
-            S = f"X({self.convertToString(phi.argument)})"
+            S = f"X({self.convertLtlToString(phi.argument)})"
             
         elif type(phi) == Until:
             assert type(phi) is Until
-            arg1, arg2 = (self.convertToString(phi.operands[0]), self.convertToString(phi.operands[1]))
+            arg1, arg2 = (self.convertLtlToString(phi.operands[0]), self.convertLtlToString(phi.operands[1]))
             S = f"({arg1} U {arg2})"
         
         return S
     
-    def convertToVisualizer(self, phi: LTLFromula) -> str:
+    
+    def convertPltlToString(self, phi: PLTLFormula) -> str:
+        """Transform the formula to a string"""
+        
+        S = ""
+        
+        if type(phi) == PltlAtomic:
+            assert type(phi) is PltlAtomic
+            S = f"{phi.name}"
+        
+        elif type(phi) == FalseFormula or type(phi) == PltlFalse:
+            S = "false"
+            
+        elif type(phi) == PltlTrue or type(phi) == TrueFormula:
+            S = "true"
+        
+        elif type(phi) == Not:
+            assert type(phi) is Not
+            S = f"!({self.convertPltlToString(phi.argument)})"
+            
+        elif type(phi) == And:
+            assert type(phi) is And
+            S = ""
+            for op in phi.operands:
+                if S == "":
+                    S += self.convertPltlToString(op)
+                else:
+                    S += " && " + self.convertPltlToString(op)
+                    
+            S = f"({S})"
+
+        elif type(phi) == Or:
+            assert type(phi) is Or
+
+            S = ""
+            for op in phi.operands:
+                if S == "":
+                    S += self.convertPltlToString(op)
+                else:
+                    S += " || " + self.convertPltlToString(op)
+                    
+            S = f"({S})"
+            
+        elif type(phi) == Before:
+            assert type(phi) is Before
+            S = f"Y({self.convertPltlToString(phi.argument)})"
+            
+        elif type(phi) == Since:
+            assert type(phi) is Since
+            arg1, arg2 = (self.convertPltlToString(phi.operands[0]), self.convertPltlToString(phi.operands[1]))
+            S = f"({arg1} S {arg2})"
+        
+        return S
+
+    def convertToVisualizer(self, phi: LTLFormula) -> str:
         """Transform the formula to a string"""
         
         S = ""
@@ -165,10 +258,10 @@ class Translator:
             S = f"{phi.name[0].upper()}"
         
         elif type(phi) == FalseFormula or type(phi) == LtlFalse:
-            S = "false"
+            S = "and(A, not(A))"
             
         elif type(phi) == LtlTrue or type(phi) == TrueFormula:
-            S = "true"
+            S = "or(A, not(A))"
         
         elif type(phi) == Not:
             assert type(phi) is Not
@@ -195,7 +288,7 @@ class Translator:
         
         return S
     
-    def reduceFormula(self, f: LTLFromula) -> LTLFromula:
+    def reduceFormula(self, f: LTLFormula) -> LTLFormula:
         if type(f) == LtlAtomic:
             return f
         
@@ -235,23 +328,21 @@ class Translator:
         return f
     
 if __name__ == "__main__":
-    # formula = "a S Y(b) && !Y(b) || Y(!a S b)"
-    # formula = "a && true"
-    # formula = "a && Y(c S !a)"
-    # formula = "a && b"
-    # formula = "Y(a)"
-    # formula = "(a S b) || Y(a)" # !!!!!
-    formula = "a && (true S b)" 
-    # formula = "true || a" 
-    # formula = "(a S b)" 
-    
+    # formula = "true U (b || a)"
+    # formula = "a U b"
+    formula = "b"
+    # formula = "X(a) U b"
+    # formula = "X(a) && X(!b)"
+    # formula = "(a || b) U c"
+    # formula = "a U X(b)"
+    # formula = "true U (a)"
+    # formula = "a U b"
+        
     print("Translating:", formula)
     T = Translator()
-    trans = T.pltlToLtl(formula)
-    print("rr:", T.convertToString(trans))
-    trans = T.reduceFormula(trans)
-    print("Res:", T.convertToString(trans))
-    print("vis:", T.convertToVisualizer(trans))
+    trans = T.ltlToPltl(formula)
+    print("F:", trans)
+    print("PltlFormula:", T.convertPltlToString(trans))
     
-    # (( (!X(true)) U (a && X(true)) ))
+    
     
