@@ -166,6 +166,8 @@ class Translator:
             assert type(phi) is And
             S = ""
             for op in phi.operands:
+                if (type(op) == TrueFormula or type(op) == LtlTrue):
+                    continue
                 if S == "":
                     S += self.convertLtlToString(op)
                 else:
@@ -177,6 +179,8 @@ class Translator:
             assert type(phi) is Or
             S = ""
             for op in phi.operands:
+                if type(op) == FalseFormula or type(op) == LtlFalse:
+                    continue
                 if S == "":
                     S += self.convertLtlToString(op)
                 else:
@@ -219,6 +223,8 @@ class Translator:
             assert type(phi) is And
             S = ""
             for op in phi.operands:
+                if type(op) ==TrueFormula or type(op) == PltlTrue:
+                    continue
                 if S == "":
                     S += self.convertPltlToString(op)
                 else:
@@ -231,6 +237,8 @@ class Translator:
 
             S = ""
             for op in phi.operands:
+                if type(op) == FalseFormula or type(op) == PltlFalse:
+                    continue
                 if S == "":
                     S += self.convertPltlToString(op)
                 else:
@@ -331,6 +339,7 @@ if __name__ == "__main__":
     # formula = "true U (b || a)"
     # formula = "a U b"
     formula = "b"
+    # formula = "X (a)"
     # formula = "X(a) U b"
     # formula = "X(a) && X(!b)"
     # formula = "(a || b) U c"
