@@ -195,7 +195,6 @@ class Translator:
         
         return S
     
-    
     def convertPltlToString(self, phi: PLTLFormula) -> str:
         """Transform the formula to a string"""
         
@@ -327,6 +326,9 @@ class Translator:
         
         return f
     
+    def aaltaEquivalence(self, f1: LTLFormula, f2: PLTLFormula) -> str:
+        return "(" + self.convertLtlToString(f1) + ") <-> (" + self.convertPltlToString(f2) + ")"
+    
 if __name__ == "__main__":
     # formula = "true U (b || a)"
     # formula = "a U b"
@@ -336,7 +338,9 @@ if __name__ == "__main__":
     # formula = "(a || b) U c"
     # formula = "a U X(b)"
     # formula = "true U (a)"
+    # formula = "true U (X(a))"
     # formula = "a U b"
+    formula = "X (a)"
         
     print("Translating:", formula)
     T = Translator()
@@ -344,5 +348,21 @@ if __name__ == "__main__":
     print("F:", trans)
     print("PltlFormula:", T.convertPltlToString(trans))
     
+    # F2 = T.pltlToLtl(T.convertPltlToString(trans))
+    # print("F2:", F2)
+    # print("LtlFormula:", T.convertLtlToString(F2))
     
     
+    # from pylogics.parsers import parse_ltl
+    
+    # formulaParsed = parse_ltl(formula)
+    
+    # print(T.convertLtlToString(formulaParsed))
+    
+    # print("AALTA equiv:")
+    # print(T.aaltaEquivalence(formulaParsed, trans))
+    # ((!a S (a)) && (!(( (a && Y((!a S (a)))))) S ( (a && Y((!(( a)) S ( a)))))))
+    
+    # ( (true S ( (!(a) && Y(true)) || (a && Y(true)))) && (true S ( (!(a) && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true))))))) || (a && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true))))))))) && (true S ( (a && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true)))) && (!(( (!(a) && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true))))))) || (a && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true))))))))) S ( (!(a) && Y(( (!(( (!(a) && Y(true)) || (a && Y(true)))) S eps)))) || (a && Y(( (!(( (!(a) && Y(true)) || (a && Y(true)))) S eps))))))))))))
+    
+    # # ( (true S ( (!(b) && Y(true)) || (b && Y(true)))) && (true S ( (b && Y(( (!(( (!(b) && Y(true)) || (b && Y(true)))) S eps)))))))

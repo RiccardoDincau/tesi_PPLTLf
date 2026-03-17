@@ -7,36 +7,66 @@ from pylogics.syntax.pltl import Atomic as PltlAtomic, PropositionalTrue as Pltl
 from pylogics.syntax.pltl import Formula as PLTLFormula, Before, Since, Once, Historically
 
 class CascadeState:
+    """A state of a cascade automaton."""
+    
     def __init__(self, index: int, tsaNode: TSANode) -> None:
+        # The state index in the cascade automaton
         self.index = index
+        
+        # A unique index of the state for all the decomposition
         self.totalIndex = -1
         self.tsaNode = tsaNode
         
 class CascadeAutomaton:
     def __init__(self, layer: int, parentCA: "CascadeAutomaton | None", tsa: TSA) -> None:
-        """A reset automaton representing a layer of a cascade decomposition"""
-        # Theta is the identity function because it is a reset automaton
+        """A semi-automaton representing a layer of a cascade decomposition."""
         
         self.tsa = tsa
         self.parentCA = parentCA
-        self.layer = layer
-        self.Q: list[CascadeState] = []
-
-        self.psi: dict[int, tuple[int, ...]] = {}
-        self.psiInv: dict[tuple[int, ...], TSANode] = {}  
         self.atomicProps: set[str] = tsa.atomicProps
         
-        # delta: (currentAutomatonState, parentState, propositionalInterpretation) => currentAutomatonState
+        # Layer number in the cascade decomposition
+        self.layer = layer
+        
+        # Representatives of TSA equivalence classes
+        # (aka states of the decomposition)
+        self.Q: list[CascadeState] = []
+
+
+        # Note that the following declarations are restrictions
+        # of the corresponding mappings to the current layer
+
+        # Injection from TSA nodes to configuration in the automaton
+        self.psi: dict[int, tuple[int, ...]] = {}
+        
+        # Inverse of psi
+        self.psiInv: dict[tuple[int, ...], TSANode] = {}  
+        
+        # Transition function of the Cascade Automaton s.t.
+        #   delta[(q, config, propositionalInterpretation)] => target
+        # where q is the index of the starting cascade state, config is 
+        # a configuration in the parent layer and propositionalInterpretation is
+        # a word of the alphabet
         self.delta: dict[tuple[int, tuple[int, ...], tuple[str, ...]], CascadeState] = {}
         
-        # theta: equivalenceClass => (m => caState)
+        # Mapping beetween TSA nodes and their representatives in the 
+        # decomposition s.t.
+        #   theta[equivalenceClass][tsaNodeIndex] => representative
+        # Note that theta is not only restricted to this layer, but
+        # is also divided by equivalence class of the parents nodes 
+        # in the TSA
         self.theta: dict[int, dict[int, CascadeState]] = {}
         
-        # thetaInv: caState.index => list[TSA]
+        # Inverse of theta
         self.thetaInv: dict[int, list[TSANode]] = {}
-        self.stateSum = parentCA.stateSum if parentCA != None else 0
-            
+
+        # The automaton is computed starting from the
+        # corresponding layer in the TSA
+        
         if parentCA == None:
+            # This is the automaton of the first layer, it is
+            # the trvial automaton (Is it????)
+            
             m = tsa.heightClasses[0][0]
             self.addState(m)
             root = self.Q[len(self.Q) - 1]
@@ -46,7 +76,6 @@ class CascadeAutomaton:
             
             self.thetaInv[root.index] = [m]
             
-            # For the fisrt layer (The root) the node is mapped to its self
             self.psi[m.index] = (root.index, )
             self.psiInv[(root.index,)] = m
             
@@ -63,16 +92,23 @@ class CascadeAutomaton:
                     self.theta[m.equivClass] = {}
                     m._CAvisited = True
                     
+                    # For each equivalence class in the parent layer choose 
+                    # a node, then select its children as representatives in 
+                    # the current layer and add the corresponding new states in 
+                    # the cascade automaton
                     for idx in m.children:
-                        # print("parent:", m.states, idx)
                         newState = self.addState(tsa.nodes[idx])
                         self.theta[m.equivClass][idx] = newState
                     
+                    # Assign a representative in the decomposition to 
+                    # all the children of the other nodes in the equivalence 
+                    # class at the parent layers
                     self.assignTheta(m, m, self.theta[m.equivClass], [])
                 
             for q in self.Q:
                 self.thetaInv[q.index] = []
                 
+            # Evaluate the inverse of theta
             for thetaEq in self.theta.values():
                 for key in thetaEq:
                     q = thetaEq[key]
@@ -86,23 +122,35 @@ class CascadeAutomaton:
                     parentNode = self.tsa.nodes[m]
                     
                     if (parentNode.equivClass in self.theta) and (child in self.theta[parentNode.equivClass]):
+                        # Compute the current layer psi as the configuration of the parent TSA node
+                        # concatenated with the current layer representative of the TSA node (If 
+                        # this exists)
+                        
                         self.psi[child] = parentCA.psi[m] + (self.theta[parentNode.equivClass][child].index, )
                 
+            # Evaluate the inverse of psi
             for m in self.psi.keys():
                 config = self.psi[m]
                 self.psiInv[config] = self.tsa.nodes[m]
 
             alphabet_it = chain.from_iterable(combinations(tsa.atomicProps, r) for r in range(len(tsa.atomicProps)+1))
 
+            # Add transition in the automaton
             for s in alphabet_it:
                 for config in self.psiInv:
+                    # Find the corresponding target in the TSA
                     targetNode = self.psiInv[config].computeTransition(set(s))
 
                     assert targetNode.parent != None, print("Target:", targetNode.states, ", layer:" ,layer,  ", config: ", config, ", psi:", self.psiInv)
                     
+                    # If the target node in the TSA exists get its representative
                     targetState = self.theta[targetNode.parent.equivClass][targetNode.index]
                     
                     self.delta[(config[-1:][0], config[:-1], s)] = targetState
+
+        # Compute the total indexes, which are the indexes of the cascade states
+        # relative to the entire cascade decomposition
+        self.stateSum = parentCA.stateSum if parentCA != None else 0
 
         for q in self.Q:
             q.totalIndex = q.index + self.stateSum
@@ -110,6 +158,10 @@ class CascadeAutomaton:
         self.stateSum += len(self.Q)
         
     def assignTheta(self, m: TSANode, reprParent: TSANode, theta_i: dict[int, CascadeState], word: list[set[str]]) -> None:
+        """Given a TSA node assigns the representative to each children of the nodes in the
+        same equivalence class."""
+        
+        # Visit the equivalence class in the parent layer
         for t in m.trans:
             if not t.target._CAvisited and t.target.equivClass == reprParent.equivClass:
                 t.target._CAvisited = True
@@ -117,40 +169,23 @@ class CascadeAutomaton:
                 newWord: list[set[str]] = word.copy()
                 newWord.append(t.ap)
                 
-                # print("Parent layer:", t.target.states)
-                # print("Children:")
-                
                 for c in t.target.children:
                     r = self.tsa.nodes[c]
-                    # print(r.states, "|", r.index, end=" ")
                     
-                    equivalenceWord = self.computeWordTo(t.target, reprParent, [False for _ in range(len(self.tsa.nodes))], [])
+                    # Compute the equivalence word from the target to the parent 
+                    # of the representative
+                    equivalenceWord = self.tsa.computeWordTo(t.target, reprParent, [False for _ in range(len(self.tsa.nodes))], [])
                     assert equivalenceWord != None
                     
+                    # Follow the equivalence word in the current layer
+                    # to determine the representative
                     representative = r.computeWord(r, equivalenceWord)
                     
                     theta_i[c] = theta_i[representative.index]
-                    # print("word:", equivalenceWord, ", theta_i:", theta_i[c].tsaNode.states, theta_i[c].tsaNode.index, end=" ")
-                # print()
                 
                 self.assignTheta(t.target, reprParent, theta_i, newWord)
     
-    def computeWordTo(self, start: TSANode, end: TSANode, visited: list[bool], word: list[set[str]]) -> list[set[str]] | None:
-        if start == end:
-            return word
-        
-        visited[start.index] = True
-        
-        # print(start.states, start.trans)
-        for t in start.trans:
-            newWord = word.copy()
-            newWord.append(t.ap)
-            
-            if not visited[t.target.index]:
-                res = self.computeWordTo(t.target, end, visited, newWord)
-                
-                if res != None:
-                    return res       
+          
 
     def addState(self, tsaNode: TSANode) -> CascadeState:
         newState = CascadeState(len(self.Q), tsaNode)
@@ -159,6 +194,8 @@ class CascadeAutomaton:
         return newState
     
     def computeStateIns(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
+        """Returns all the transitions entering the state"""
+        
         ins: list[tuple[tuple[int, ...], set[str]]] = [] 
         for k in self.delta.keys():
             if self.delta[k].index == state and k[0] != state and not ( (k[1], set(k[2])) in ins):
@@ -166,6 +203,8 @@ class CascadeAutomaton:
         return ins
     
     def computeStateOuts(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
+        """Returns all the transitions exiting the state."""
+        
         outs: list[tuple[tuple[int, ...], set[str]]] = [] 
         for k in self.delta.keys():
             if k[0] == state and self.delta[k].index != state and not ( (k[1], set(k[2])) in outs):
@@ -173,6 +212,8 @@ class CascadeAutomaton:
         return outs
 
     def propIntToStr(self, propositionalInterpretation: set[str]) -> str:
+        """Transforms a propositional interpretation over the alphabet in a string."""
+        
         S = ""
         for p in self.atomicProps:
             if len(S) > 0:
@@ -185,11 +226,15 @@ class CascadeAutomaton:
         return S     
 
     def configToStr(self, config: tuple[int, ...], layerCa: "CascadeAutomaton | None") -> str:
+        """Returns a configuration as a string."""
+        
         if layerCa == None: return ""
         else:
             return self.configToStr(config[:-1], layerCa.parentCA) + "," + chr(ord("A") + layerCa.Q[config[len(config) - 1]].totalIndex)
                                 
     def toDot(self) -> str:
+        """Returns a string in dot format of the automaton."""
+        
         S: str = f"digraph CA "
         S += """{
     rankdir = TD;
@@ -228,11 +273,11 @@ class CascadeAutomaton:
 class CascadeDecomposition:
     
     def __init__(self, dfa: FiniteAutomaton):
-        """Build the cascade decomposition of a counter-free deterministic
-        FiniteAutomaton representing a temporal logic formula"""
+        """Build the cascade decomposition of a FiniteAutomaton"""
         
         self.dfa = dfa
         
+        # Holonomy three associated to the automaton
         self.tsa = TSA(dfa)
         self.tsa.visualize(True, "TSA_in_CD", "imgs/trn/")
         
@@ -240,25 +285,30 @@ class CascadeDecomposition:
         self.dfaAcceptingStates = dfa.acceptingStates
         self.dfaInitState = dfa.initState
 
+        # Layers of the decomposition. Construction the root layer
         self.CAs: list[CascadeAutomaton] = [CascadeAutomaton(0, None, self.tsa)]
         for layer in range(1, self.tsa.height):
-            # print("layer:", layer)
             newCA = CascadeAutomaton(layer, self.CAs[layer - 1], self.tsa)
             self.CAs.append(newCA)
             
+        # Map of each state (Using total index) to its layer
         self.stateToCa: dict[int, CascadeAutomaton] = {}
         for CA in self.CAs:
             for q in CA.Q:
                 self.stateToCa[q.totalIndex] = CA
     
         self.visualizeWithTsa("withTSA", "imgs/trn/")
+        
         self.phiInv = self.computePhiInv()
-        
         self.phi: dict[tuple[int, ...], State] = self.computePhi()
-        
-        # print(self.phiInv)
             
     def synthetizeFormula(self) -> PLTLFormula:
+        """Returns the PLTLf formula associated to the input DFA.
+        
+        The formula is the conjuction of the 
+        formulas associated to the accepting states.
+        """
+        
         res: PLTLFormula | None = None
 
         for state in self.dfaAcceptingStates:
@@ -269,32 +319,36 @@ class CascadeDecomposition:
             else:
                 res = Or(res, f)
                 
-                
         assert res != None
         
         return res
 
     def automatonStateFormula(self, s: State) -> PLTLFormula:
+        """Returns the PLTLf formula associated to a state in the DFA.
+        
+        The formula is built as the conjunction of the formulas for the
+        configurations associated to the state.
+        """
         res: PLTLFormula | None = None
         
-        # print("Acc config:", self.phiInv[s.index])
         for config in self.phiInv[s.index]:
             f: PLTLFormula = self.configurationFormula(config)
-            print(config, "(", s.index, ") -->", str(f))
+            
             if res == None:
                 res = f
             else:
                 res = Or(res, f)
                 
-            # print("New res:", res)
-                
-        # print("State:", s.index, ", f:", res)
-
         assert res != None
         
         return res
     
     def configurationFormula(self, config: tuple[int, ...]) -> PLTLFormula:
+        """Returns the PLTLf formula associated to a configuration.
+        
+        The formula is built as the disjunction of the formulas 
+        associated to each state in the configuration.
+        """
         res: PLTLFormula | None = None
         
         for i in range(len(config)):
@@ -314,13 +368,22 @@ class CascadeDecomposition:
         return res
         
     def CAStateFormula(self, totalIndex: int, CAindex: int) -> PLTLFormula:
-        # The first state is always the trivial one-state automaton
+        """Returns the PLTLf formula associated to a state in the decomposition.
+        
+        The formula is built as (!outs) S (ins), where ins are the transitions
+        entering the state and outs are the ones leaving.
+        """
+        
+        # The first state is always the trivial one-state automaton (?????)
         if totalIndex == 0:
             return PltlTrue()
         
         CA = self.stateToCa[totalIndex]
         
+        # Set of transition entering the automaton
         ins = CA.computeStateIns(CAindex)
+        
+        # Set of transition exiting the automaton
         outs = CA.computeStateOuts(CAindex)
         
         inFromula: PLTLFormula = PltlFalse()
@@ -333,10 +396,9 @@ class CascadeDecomposition:
             if totalIndex == 0:
                 f = self.propIntToFormula(c[1])
             else:
-                # if c[0] == (0, ):
-                #     # ?????????
-                #     f = self.propIntToFormula(c[1])                    
-                # else:
+                # For all the states not in the root layer the letter of a transition consists
+                # in a configuration and an interpretation for each proposition, which are 
+                # decomposed in the following way
                 f = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
                 
             inFromula = Or(inFromula, f)  
@@ -348,22 +410,17 @@ class CascadeDecomposition:
             if totalIndex == 0:
                 f = self.propIntToFormula(c[1])
             else:
+                # For all the states not in the root layer the letter of a transition consists
+                # in a configuration and an interpretation for each proposition, which are 
+                # decomposed in the following way
                 f = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
                 
             outFromula = Or(outFromula, f)    
                 
-        # print("q:", q, ", f:", Since(Not(outFromula), inFromula))
-        
-
-        if inFromula == PltlFalse():
-            print("False")
-            print(inFromula, totalIndex, CAindex)
-            print(ins)
-            print(outs)
-            
         return Since(Not(outFromula), inFromula) 
     
     def propIntToFormula(self, propInt: set[str]) -> PLTLFormula:
+        """Converts a propositional interpretation to a PLTLf formula."""
         res: PLTLFormula | None = None
         
         for s in self.tsa.atomicProps:
@@ -401,8 +458,16 @@ class CascadeDecomposition:
     #     return PltlAtomic(name)
 
     def computePhiInv(self) -> list[list[tuple[int, ...]]]:
+        """Computes the mapping from states in the DFA to configuration representing 
+        that state.
+        
+        At each index i in the returned list there is the list of configurations
+        for the i-th state in the automaton.
+        """
+        
         phiInv: list[list[tuple[int, ...]]] = []
         
+        # Mapping of the states in the DFA to nodes in the holonomy tree
         statesToNodes: list[set[TSANode]] = []
         
         for _ in range(self.dfaStatesNumber):
@@ -418,11 +483,16 @@ class CascadeDecomposition:
                 for CA in self.CAs:
                     if node.index in CA.psi:
                         if len(CA.psi[node.index]) == len(self.CAs):
+                            # For each state in the DFA, first compute the corresponding 
+                            # nodes of the holonomy tree, then for each node get 
+                            # the corresponding state in the decomposition
                             phiInv[q].append(CA.psi[node.index])
 
         return phiInv
     
     def computePhi(self) -> dict[tuple[int, ...], State]:
+        """Returns the mapping from configurations in the decompositions
+        to states in the automaton."""
         phi: dict[tuple[int, ...], State] = {}
         
         for q in range(len(self.phiInv)):
@@ -433,7 +503,11 @@ class CascadeDecomposition:
         return phi
         
     def homomorphicAutomaton(self) -> FiniteAutomaton:
-        # Starting state and accepting state of FA are not correct
+        """Builds the automaton homomorphic to the decomposition.
+        
+        This construction does not correctly assign the inital 
+        and accepting states.
+        """
         
         configs = self.computeLastLayerConfigurations(0, [()])
         lastCa = self.CAs[len(self.CAs) - 1]
@@ -441,30 +515,42 @@ class CascadeDecomposition:
         for config in configs:
             if not (config in lastCa.psiInv.keys()):
                 configs.remove(config)
-                
+               
+        # Initiate the homomorphic automaton
         fa = FiniteAutomaton(len(configs), self.tsa.atomicProps)
         
+        # Declaration of the homomorphism function
         phi: dict[tuple[int, ...], State] = {}
         
+        # Assignment of each configuration to a state in the
+        # newly created automaton
         index = 0
         for config in configs:
             phi[config] = fa.states[index]
             index += 1
         
-        delta = lastCa.delta
-        
-        for k in delta.keys():
+        # Generation of the transition function in the automaton
+        for k in lastCa.delta.keys():
             startConfig: tuple[int, ...] = k[1] + (k[0], )
             
             targetConfig: tuple[int, ...] | None = self.computeConfigurationTransition(len(self.CAs) - 1, startConfig, k[2])
-            # print("Start:", startConfig, ", target:", targetConfig)
 
+            # If the transition from startConfig with letter k[2] 
+            # exists, adda a transition between the corresponding
+            # states in the automaton
             if targetConfig != None:
                 fa.addTransition(phi[startConfig], phi[targetConfig], set(k[2]))
         
         return fa
     
     def homomorphicAutomatonPhi(self) -> FiniteAutomaton:
+        """Builds the automaton homomorphic to the decomposition.
+        
+        This method directly uses the mapping phi. This also 
+        allows to correctly detremine the initial and accepting states.
+        """
+        
+        # Initialization of the homomorphic automaton
         FA = FiniteAutomaton(len(self.phi.keys()), self.dfa.atomicProps)
         
         alphabet_it = chain.from_iterable(combinations(self.dfa.atomicProps, r) for r in range(len(self.dfa.atomicProps)+1))
@@ -486,6 +572,8 @@ class CascadeDecomposition:
         return FA
     
     def computeLastLayerConfigurations(self, layer: int, config: list[tuple[int, ...]]) -> list[tuple[int, ...]]:
+        """Returns all the possible configurations, including the empty ones."""
+        
         newConfig = []
         for i in range(len(config)):
             for state in self.CAs[layer].Q:
@@ -497,21 +585,31 @@ class CascadeDecomposition:
             return self.computeLastLayerConfigurations(layer + 1, newConfig)
         
     def computeConfigurationTransition(self, layer: int, config: tuple[int, ...], s: tuple[str, ...]) -> tuple[int, ...] | None:
+        """Returns the target state of a transition in the configuration tree. If there 
+        is no such transition, None is returned instead."""
+        
         assert layer < len(self.CAs)
         
         targetConfig: tuple[int, ...] = ()
         
         for i in range(layer + 1):
+            # Compute the transition in each layer for the letter
+            # given by the i-th subconfiguration of the starting configuration
+            # and the given propositional interpretation
             layerTargetState: CascadeState | None = self.CAs[i].delta[(config[i], config[:i], s)]
             
             if (layerTargetState == None): 
                 return None
             else:
+                # If there is a target for the transition in the current layer
+                # add it to the target configuration
                 targetConfig += (layerTargetState.index, )
 
         return targetConfig
 
     def toDot(self) -> str:
+        """Returns a string containing the decomposition in Dot format."""
+        
         S: str = f"digraph CD "
         S += """{
     rankdir = TD;
@@ -532,6 +630,10 @@ class CascadeDecomposition:
         return S
     
     def visualizeWithTsa(self, imageName = "Unnamed", imagePath = "img/", format = "svg"):
+        """Saves an image containing the decomposition, the associated TSA
+        and the theta function which connects TSA nodes to their representative 
+        in the decomposition"""
+        
         offset = self.CAs[len(self.CAs) - 1].stateSum 
         offset = offset * offset
         
@@ -603,9 +705,10 @@ class CascadeDecomposition:
         src.render(imagePath + imageName, format = format, view = False)
     
     def visualize(self, imageName = "Unnamed", imagePath = "img/", format = "svg") -> None:
-        """Save a SVG image of the graph using graphiz"""
+        """Saves a SVG image of the decomposition."""
         
         from graphviz import Source
         
         src = Source(self.toDot())
+        
         src.render(imagePath + imageName, format = format, view = False)

@@ -414,6 +414,24 @@ class TSA:
                 
         return desc
     
+    def computeWordTo(self, start: TSANode, end: TSANode, visited: list[bool], word: list[set[str]]) -> list[set[str]] | None:
+        """Returns the word to transition from the start node to the target node."""
+        
+        if start == end:
+            return word
+        
+        visited[start.index] = True
+        
+        for t in start.trans:
+            newWord = word.copy()
+            newWord.append(t.ap)
+            
+            if not visited[t.target.index]:
+                res = self.computeWordTo(t.target, end, visited, newWord)
+                
+                if res != None:
+                    return res
+    
     def getAncestors(self, m: TSANode) -> set[TSANode]:
         """Returns the inedxes of all the ancestors of a node."""
         
