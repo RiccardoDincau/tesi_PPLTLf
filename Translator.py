@@ -1,6 +1,6 @@
 from pylogics.syntax.base import Logic, Not, And, Or, FalseFormula, TrueFormula
 from pylogics.syntax.pltl import Atomic as PltlAtomic, PropositionalTrue as PltlTrue, PropositionalFalse as PltlFalse
-from pylogics.syntax.pltl import Before, Since, Once, Historically, Formula as PLTLFormula
+from pylogics.syntax.pltl import Before, Since, Once, Historically, Formula as PLTLFormula, WeakSince
 from pylogics.syntax.ltl import Atomic as LtlAtomic, PropositionalTrue as LtlTrue, PropositionalFalse as LtlFalse
 from pylogics.syntax.ltl import Next, Until, Formula as LTLFormula
 from pylogics.parsers.pltl import parse_pltl 
@@ -249,6 +249,11 @@ class Translator:
             assert type(phi) is Before
             S = f"Y({self.convertPltlToString(phi.argument)})"
             
+        elif type(phi) == WeakSince:
+            assert type(phi) is WeakSince
+            arg1, arg2 = (self.convertPltlToString(phi.operands[0]), self.convertPltlToString(phi.operands[1]))
+            S = f"({arg1} W {arg2})"
+            
         elif type(phi) == Since:
             assert type(phi) is Since
             arg1, arg2 = (self.convertPltlToString(phi.operands[0]), self.convertPltlToString(phi.operands[1]))
@@ -349,7 +354,8 @@ if __name__ == "__main__":
     # formula = "true U (a)"
     # formula = "true U (X(a))"
     # formula = "a U b"
-    formula = "X (a)"
+    # formula = "X (a)"
+
         
     print("Translating:", formula)
     T = Translator()
@@ -370,8 +376,18 @@ if __name__ == "__main__":
     
     # print("AALTA equiv:")
     # print(T.aaltaEquivalence(formulaParsed, trans))
-    # ((!a S (a)) && (!(( (a && Y((!a S (a)))))) S ( (a && Y((!(( a)) S ( a)))))))
     
-    # ( (true S ( (!(a) && Y(true)) || (a && Y(true)))) && (true S ( (!(a) && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true))))))) || (a && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true))))))))) && (true S ( (a && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true)))) && (!(( (!(a) && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true))))))) || (a && Y(( (true S ( (!(a) && Y(true)) || (a && Y(true))))))))) S ( (!(a) && Y(( (!(( (!(a) && Y(true)) || (a && Y(true)))) S eps)))) || (a && Y(( (!(( (!(a) && Y(true)) || (a && Y(true)))) S eps))))))))))))
+    # ( ( (true S ((b  && (!(((!(b) && (true W false)) || (b && (true W false)))) W false)))))
     
-    # # ( (true S ( (!(b) && Y(true)) || (b && Y(true)))) && (true S ( (b && Y(( (!(( (!(b) && Y(true)) || (b && Y(true)))) S eps)))))))
+    # (true && (false S (true)) && (true S ((b && (false W false)))))
+    
+    
+    # ((!(( (!(b)) || (b))) S ((!(b)) || (b))) && (true S ((b && ( !(( (!(b)) || (b) )) W false)))))
+    
+    # ((!(((!(b)) || (b))) S ((!(b)) || (b))) && (true S ((b && (!(((!(b)) || (b))) W false)))))
+    
+    # (false && (true S (false)) && (true S ((b && false && (!((false)) W false)))))
+    
+    # ((false S (true)) && (true S ((b && (false W false)))))
+    
+    
