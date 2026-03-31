@@ -3,3 +3,4 @@ imgs
 .venv
 __pycache__
 CLI/__pycache__/
+out.txt
