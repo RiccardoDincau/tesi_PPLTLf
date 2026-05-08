@@ -1,6 +1,6 @@
 from pylogics.syntax.base import Logic, Not, And, Or, FalseFormula, TrueFormula
 from pylogics.syntax.pltl import Atomic as PltlAtomic, PropositionalTrue as PltlTrue, PropositionalFalse as PltlFalse
-from pylogics.syntax.pltl import Before, Since, Once, Historically, Formula as PLTLFormula, WeakSince
+from pylogics.syntax.pltl import Before, Since, Once, Historically, Formula as PLTLFormula, WeakSince, WeakBefore
 from pylogics.syntax.ltl import Atomic as LtlAtomic, PropositionalTrue as LtlTrue, PropositionalFalse as LtlFalse
 from pylogics.syntax.ltl import Next, Until, Formula as LTLFormula
 from pylogics.parsers.pltl import parse_pltl 
@@ -25,15 +25,18 @@ class Translator:
         CD.visualize("CD", "imgs/trn/")
         
         CD.homomorphicAutomaton().visualize("CDisoFA", "imgs/trn/")  
-        CD.homomorphicAutomatonPhi().visualize("CDisoFA2", "imgs/trn/")  
+        # CD.homomorphicAutomatonPhi().visualize("CDisoFA2", "imgs/trn/")  
+        # print(CD.homomorphicAutomatonPhi())
         # print("CD phi:", CD.phi)
+        # for k in CD.phi.keys():
+        #     print(k,"->", CD.phi[k].index)
         
-        for CA in CD.CAs:
-            for state in CA.Q:
-                print(chr(ord("A") + state.totalIndex), end = "")
-                # print(CA.computeStateIns(state.index))
-                # print(CA.computeStateOuts(state.index))
-                print(" --> ", self.convertPltlToString(CD.CAStateFormula(state.totalIndex, state.index)))
+        # for CA in CD.CAs:
+        #     for state in CA.Q:
+        #         print(chr(ord("A") + state.totalIndex), end = "")
+        #         # print(CA.computeStateIns(state.index))
+        #         # print(CA.computeStateOuts(state.index))
+        #         print(" --> ", self.convertPltlToString(CD.CAStateFormula(state.totalIndex, state.index)))
         
         # return PltlTrue()
         return CD.synthetizeFormula()
@@ -41,7 +44,7 @@ class Translator:
     def pltlToLtl(self, formula: str) -> LTLFormula:
         pltlF = parse_pltl(formula)
         
-        switched = self.switchPltlToLtl(pltlF)
+        switched = self.switchPltlToLtl(pltlF) # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         
         print("Switched:", self.convertLtlToString(switched))
         
@@ -444,12 +447,16 @@ class Translator:
         elif type(phi) == Before:
             assert type(phi) is Before
             S = f"Y({self.PLTLtoBlackSyntax(phi.argument)})"
+        
+        elif type(phi) == WeakBefore:
+            assert type(phi) is WeakBefore
+            S = f"Z({self.PLTLtoBlackSyntax(phi.argument)})"
             
         elif type(phi) == WeakSince:
             assert type(phi) is WeakSince
             arg1, arg2 = (self.PLTLtoBlackSyntax(phi.operands[0]), self.PLTLtoBlackSyntax(phi.operands[1]))
             # S = f"(({arg1} S {arg2}) || (!(Y(True))))"
-            S = f"({arg1} S {arg2}) || (!(True S (!({arg1}))))"
+            S = f"({arg1} S {arg2}) || (!(True S (({arg1}))))"
             
         elif type(phi) == Since:
             assert type(phi) is Since
@@ -460,7 +467,8 @@ class Translator:
         
     
     def blackEquivalence(self, f1: LTLFormula, f2: PLTLFormula) -> str:
-        return "(" + self.LTLtoBlackSyntax(f1) + ") <-> (True U (" + self.PLTLtoBlackSyntax(f2) + "))"
+        return "(" + self.LTLtoBlackSyntax(f1) + ") <-> (True U (" + self.PLTLtoBlackSyntax(f2) + " && !X(True) ))"
+        # return "(" + self.LTLtoBlackSyntax(f1) + ") <-> (True U (" + self.PLTLtoBlackSyntax(f2) + "))"
     
     def blackValidity(self, f1: LTLFormula, f2: PLTLFormula) -> str:
         return "!(" + self.blackEquivalence(f1, f2) + ")"
@@ -476,26 +484,42 @@ if __name__ == "__main__":
     # formula = "X(a) && X(!b)"
     # formula = "(a || b) U c"
     # formula = "a U b"
-    formula = "true U (a)"
+    # formula = "true U (a)"
+    # formula = "true S (a)"
     # formula = "true U (X(a))"
-    # formula = "a U b"
-    # formula = "X (a)"
+    # formula = "true U (X(a))"
+    formula = "a U b || c"
+    # formula = "X(a)"
     
     formulaParsed = parse_ltl(formula)
-        
+        #((b) U ((b))))
     # print("Translating:", formula)
     T = Translator()
     trans = T.ltlToPltl(formula)
     # print("F:", trans)
-    print("PltlFormula:", trans)
-    print("PltlFormula:", T.convertPltlToString(trans))
+    # print("PltlFormula:", trans)
+    # print("F:", trans)
+    # print("PltlFormula:", T.convertPltlToString(trans))
     # print("Black syntax:", T.PLTLtoBlackSyntax(trans))
-    print("Equiv:", T.blackValidity(formulaParsed, trans))
+    print(T.blackEquivalence(formulaParsed, trans))
+    # print("Equiv:", T.blackEquivalence(formulaParsed, trans))
     # print(T.blackValidity(formulaParsed, trans))
     
     # print(T.LTLtoBlackSyntax(Next(LtlFalse())))
     
-    print("Black weak:", T.PLTLtoBlackSyntax(WeakSince(PltlFalse(), PltlFalse())))
+    # print("Black weak:", T.PLTLtoBlackSyntax(WeakSince(PltlFalse(), PltlFalse())))
     
+    # trans = T.pltlToLtl(formula)
+    # print("Ltl:", T.convertLtlToString(trans))
+    # (false || !(true S false)
+    # ((true S (true) && (true S ((b && ( (!(true S false) || !(true S false) )))))
     # !((b) <-> (True S (( (True S ((b && (!((True)) S False) || ( !(True S (!(!((True)))   ))))))))))
+    
+    # ((b) <-> (True U (
+        # ((True S (Y(True))
+        # ) 
+    #   && (True S ((b && Y((( ( False S False ) || !((True S ((!(b) && Y(True)) || (b && Y(True)))  ))))))))) && !X(True) )))
+    
+    
+    
     

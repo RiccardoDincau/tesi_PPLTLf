@@ -4,7 +4,7 @@ from itertools import combinations, chain
 
 from pylogics.syntax.base import Logic, Not, And, Or
 from pylogics.syntax.pltl import Atomic as PltlAtomic, PropositionalTrue as PltlTrue, PropositionalFalse as PltlFalse
-from pylogics.syntax.pltl import Formula as PLTLFormula, Before, Since, Once, Historically, WeakSince
+from pylogics.syntax.pltl import Formula as PLTLFormula, Before, Since, Once, Historically, WeakSince, WeakBefore
 
 class CascadeState:
     """A state of a cascade automaton."""
@@ -218,12 +218,15 @@ class CascadeAutomaton:
     
         return resets
     
+    def isInit(self, realtiveIndex: int, initStateIndex: int) -> bool:
+        return initStateIndex in self.Q[realtiveIndex].tsaNode.states
+    
     def computeStateIns(self, state: int) -> list[tuple[tuple[int, ...], set[str]]]:
         """Returns all the transitions entering the state"""
         
         ins: list[tuple[tuple[int, ...], set[str]]] = [] 
         for k in self.delta.keys():
-            if self.delta[k].index == state and ((k[1], k[2]) in self.getResetsLetters())  and not ( (k[1], set(k[2])) in ins):
+            if self.delta[k].index == state and ((k[1], k[2]) in self.getResetsLetters()) and k[0] != state and not ( (k[1], set(k[2])) in ins):
                 ins.append((k[1], set(k[2])))
         return ins
     
@@ -232,7 +235,7 @@ class CascadeAutomaton:
         
         outs: list[tuple[tuple[int, ...], set[str]]] = [] 
         for k in self.delta.keys():
-            if k[0] == state and ((k[1], k[2]) in self.getResetsLetters()) and not ( (k[1], set(k[2])) in outs):
+            if k[0] == state and ((k[1], k[2]) in self.getResetsLetters()) and self.delta[k] != self.Q[k[0]]  and not ( (k[1], set(k[2])) in outs):
                 outs.append((k[1], set(k[2])))    
         return outs
 
@@ -421,7 +424,13 @@ class CascadeDecomposition:
                 # For all the states not in the root layer the letter of a transition consists
                 # in a configuration and an interpretation for each proposition, which are 
                 # decomposed in the following way
-                f = And(self.propIntToFormula(c[1]), self.configurationFormula(c[0]))
+                
+                nextStateRelIdx = c[0][len(c[0]) - 1]
+                
+                if CA.parentCA.isInit(nextStateRelIdx, self.dfa.initState.index):
+                    f = And(self.propIntToFormula(c[1]), WeakBefore(self.configurationFormula(c[0])))
+                else:
+                    f = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
                 
             inFromula = Or(inFromula, f)  
             
@@ -435,14 +444,20 @@ class CascadeDecomposition:
                 # For all the states not in the root layer the letter of a transition consists
                 # in a configuration and an interpretation for each proposition, which are 
                 # decomposed in the following way
-                f = And(self.propIntToFormula(c[1]), self.configurationFormula(c[0]))
                 
-            outFromula = Or(outFromula, f)    
+                nextStateRelIdx = c[0][len(c[0]) - 1]
+                
+                if CA.parentCA.isInit(nextStateRelIdx, self.dfa.initState.index):
+                    f = And(self.propIntToFormula(c[1]), WeakBefore(self.configurationFormula(c[0])))
+                else:
+                    f = And(self.propIntToFormula(c[1]), Before(self.configurationFormula(c[0])))
+                
+            outFromula = Or(outFromula, f)
         
         if self.dfa.initState.index in CA.Q[CAindex].tsaNode.states:
-            return WeakSince(Not(outFromula), inFromula) 
+            return Or(Since(Not(outFromula), inFromula), Not(Since(PltlTrue(), (outFromula)))) 
         
-        return Since(Not(outFromula), inFromula) 
+        return Since(Not(outFromula), inFromula)
     
     def propIntToFormula(self, propInt: set[str]) -> PLTLFormula:
         """Converts a propositional interpretation to a PLTLf formula."""
